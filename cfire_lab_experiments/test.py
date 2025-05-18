@@ -1,21 +1,18 @@
 # trying to extend provided test script to use actual datasets
 
-import os
 
-from torch.optim.optimizer import Optimizer
-
-default_path = "../"
-os.chdir(default_path)
+# TODO: what exactly is this for? we need to run the script from the project root. This way data such as datasets is stored to outside the project directory.. why?
+# import os
+# default_path = "../"
+# os.chdir(default_path)
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.datasets import load_iris, load_breast_cancer
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
 from lxg.datasets import NumpyRandomSeed, TorchRandomSeed
+import lxg.datasets as datasets
 from lxg.attribution import kernelshap
 from lxg.models import make_ff, SimpleNet
 
@@ -23,36 +20,38 @@ from cfire.cfire_module import CFIRE
 from cfire.util import __preprocess_explanations
 
 
-def main():
-    # Load dataset
-    dataset = load_iris()
-    X, y = dataset["data"], dataset["target"]
-    scaler = StandardScaler()
-    X = scaler.fit_transform(X)
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        X, y, test_size=0.6, random_state=42
-    )
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_temp, y_temp, test_size=0.5, random_state=42
-    )
-    input_size = X.shape[1]
-    output_size = len(np.unique(y))
-    print(f"n_samples\ntrain: {len(X_train)}\n val: {len(X_val)}\n test: {len(X_test)}")
+def loader_to_tensor(loader):
+    """collect all batches of dataloader into one tensor"""
+    xs, ys = [], []
+    for xb, yb in loader:
+        xs.append(xb)
+        ys.append(yb)
+    X = torch.cat(xs)
+    y = torch.cat(ys)
+    return X, y
 
-    # Convert to PyTorch tensors
-    X_train, y_train = torch.tensor(X_train, dtype=torch.float32), torch.tensor(
-        y_train, dtype=torch.long
+
+def main():
+    # load dataset 'abalone' (tabular, multi-class, N=4177)
+    # `_return_dataset` already properly applies standard scaling
+    # `batch_sizes` refers to (train, val/test batch size) TODO: why would we want different batch sizes?
+    dataset = datasets.get_abalone()
+    print(dataset)
+    train_loader, test_loader, val_loader, n_dim, n_classes = dataset
+
+    print(
+        f"n_samples\ntrain: {len(train_loader.dataset)}\n val: {len(val_loader.dataset)}\n test: {len(test_loader.dataset)}"
     )
-    X_val, y_val = torch.tensor(X_val, dtype=torch.float32), torch.tensor(
-        y_val, dtype=torch.long
-    )
-    X_test, y_test = torch.tensor(X_test, dtype=torch.float32), torch.tensor(
-        y_test, dtype=torch.long
-    )
+
+    # TODO: crappy workaround or ok?
+    X_train, y_train = loader_to_tensor(train_loader)
+    X_val, y_val = loader_to_tensor(val_loader)
+    X_test, y_test = loader_to_tensor(test_loader)
 
     # define model + CFIRE parameters
-    model = make_ff([input_size, 128, 128, output_size], torch.nn.ReLU).to("cpu")
-    kernelshap_mask = torch.arange(0, input_size)
+    # TODO: where is model batch size defined? is it implicit?
+    model = make_ff([n_dim, 128, 128, n_classes], torch.nn.ReLU).to("cpu")
+    kernelshap_mask = torch.arange(0, n_dim)
     _perturb_args = {"model": model, "n_samples": 300, "masks": kernelshap_mask}
     ks_fn = lambda inference_fn, data, targets: kernelshap(
         inference_fn=inference_fn,
@@ -71,10 +70,13 @@ def main():
         y_val,
         criterion=nn.CrossEntropyLoss(),
         optimizer=optim.Adam(model.parameters()),
+        num_epochs=300,
     )
+    y_train_model_pred = model.predict_batch(X_train).numpy()
     y_val_model_pred = model.predict_batch(X_val).numpy()
-    print(f"model val accuacy: {np.mean(y_val_model_pred == y_val.numpy())}")
     y_test_model_pred = model.predict_batch(X_test).numpy()
+    print(f"model train accuacy: {np.mean(y_train_model_pred == y_train.numpy())}")
+    print(f"model val accuacy: {np.mean(y_val_model_pred == y_val.numpy())}")
     print(f"model test accuacy: {np.mean(y_test_model_pred == y_test.numpy())}")
 
     with NumpyRandomSeed(42):
@@ -99,8 +101,8 @@ def train_model(
     X_val,
     y_val,
     criterion,
-    optimizer: Optimizer,
-    num_epochs=300,
+    optimizer: optim.Optimizer,
+    num_epochs: int,
 ):
     for epoch in range(num_epochs):
         # Forward pass
