@@ -10,6 +10,7 @@ if __name__ == '__main__':
     import torch
     from cfire.util import __preprocess_explanations
     from lxg.attribution import kernelshap
+    from lxg.models import make_ff, SimpleNet
     from cfire.cfire_module import CFIRE
 
     import torch
@@ -28,7 +29,7 @@ if __name__ == '__main__':
     scaler = StandardScaler()
     X = scaler.fit_transform(X)
 
-    # Split into train (70%), validation (15%), and test (15%)
+    # Split into train (40%), validation (20%), and test (20%)
     X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.6, random_state=42)
     X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
 
@@ -39,12 +40,9 @@ if __name__ == '__main__':
 
     print(f"n_samples\ntrain: {len(X_train)}\n val: {len(X_val)}\n test: {len(X_test)}")
 
-    from lxg.models import make_ff, SimpleNet
-
     input_size = X.shape[1]
     output_size = len(np.unique(y))
-    model = make_ff([input_size, 128, 128, output_size], torch.nn.ReLU)
-    model.to('cpu')
+    model = make_ff([input_size, 128, 128, output_size], torch.nn.ReLU).to('cpu')
 
     kernelshap_mask = torch.arange(0, input_size)
     _perturb_args = {
@@ -88,7 +86,7 @@ if __name__ == '__main__':
 
     y_val_model_pred = model.predict_batch(X_val).numpy()
     print(f"model accuacy: {np.mean(y_val_model_pred == y_val.numpy())}")
-    y_test_model_red = model.predict_batch(X_test).numpy()
+    y_test_model_pred = model.predict_batch(X_test).numpy()
 
     with NumpyRandomSeed(42):
         with TorchRandomSeed(42):
@@ -96,7 +94,7 @@ if __name__ == '__main__':
                           expl_binarization_fn=expl_binarization_fn,
                           frequency_threshold=0.01)
             cfire.fit(X_val.numpy(), y_val_model_pred)
-            y_cfire_test = cfire(X_test)
-            acc = np.mean(y_test_model_red == y_cfire_test)
+            y_test_cfire_pred = cfire(X_test)
+            acc = np.mean(y_test_model_pred == y_test_cfire_pred)
             print(f"cfire acc: {acc}")
-            print(cfire.dnf.rules)
+            print(f"cfire rules: {cfire.dnf.rules}")
