@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 import numpy as np
+import torch
 
 import time
 
@@ -47,6 +48,12 @@ class CFIRE:
     def _calc_explanations(self):
         time_expl = time.time()
         self._explanations = self._localexplainer_fn(self._inference_fn, self._data, self._labels)
+
+        # TODO: Not quite sure where to put this, but in case local explainer returns a tensor
+        # cast it to numpy before further processing, as it can crash future functions otherwise
+        if isinstance(self._explanations, torch.Tensor):
+            self._explanations = self._explanations.cpu().numpy() 
+
         self._compute_times['_calc_explanations'] = time.time() - time_expl
 
         time_bin_exp = time.time()
