@@ -1,4 +1,5 @@
-# trying to extend provided test script to use actual datasets
+# this script trains a simple FF model and calculates explanations for validation split
+# run `test_cfire.py` after!
 
 
 # TODO: what exactly is this for? we need to run the script from the project root. This way data such as datasets is stored to outside the project directory.. why?
@@ -11,24 +12,18 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from pathlib import Path
 from lxg.datasets import NumpyRandomSeed, TorchRandomSeed
 import lxg.datasets as datasets
 from lxg.attribution import kernelshap
-from lxg.models import make_ff, SimpleNet
+from lxg.models import make_ff
+from lxg.util import create_checkpoint
 
-from cfire.cfire_module import CFIRE
-from cfire.util import __preprocess_explanations
+from cfire_lab_experiments.util import loader_to_tensor
 
-
-def loader_to_tensor(loader):
-    """collect all batches of dataloader into one tensor"""
-    xs, ys = [], []
-    for xb, yb in loader:
-        xs.append(xb)
-        ys.append(yb)
-    X = torch.cat(xs)
-    y = torch.cat(ys)
-    return X, y
+# init model dir
+model_dir = Path("./models/")
+model_dir.mkdir(parents=True, exist_ok=True)
 
 
 def main():
@@ -36,7 +31,6 @@ def main():
     # `_return_dataset` already properly applies standard scaling
     # `batch_sizes` refers to (train, val/test batch size) TODO: why would we want different batch sizes?
     dataset = datasets.get_abalone()
-    print(dataset)
     train_loader, test_loader, val_loader, n_dim, n_classes = dataset
 
     print(
@@ -51,15 +45,6 @@ def main():
     # define model + CFIRE parameters
     # TODO: where is model batch size defined? is it implicit?
     model = make_ff([n_dim, 128, 128, n_classes], torch.nn.ReLU).to("cpu")
-    kernelshap_mask = torch.arange(0, n_dim)
-    _perturb_args = {"model": model, "n_samples": 300, "masks": kernelshap_mask}
-    ks_fn = lambda inference_fn, data, targets: kernelshap(
-        inference_fn=inference_fn,
-        data=torch.from_numpy(data).float(),
-        targets=torch.from_numpy(targets),
-        **_perturb_args,
-    )
-    expl_binarization_fn = lambda x: __preprocess_explanations(x, filtering=0.01) > 0
 
     # train and evaluate black box model
     train_model(
@@ -72,26 +57,35 @@ def main():
         optimizer=optim.Adam(model.parameters()),
         num_epochs=300,
     )
-    y_train_model_pred = model.predict_batch(X_train).numpy()
-    y_val_model_pred = model.predict_batch(X_val).numpy()
-    y_test_model_pred = model.predict_batch(X_test).numpy()
-    print(f"model train accuacy: {np.mean(y_train_model_pred == y_train.numpy())}")
-    print(f"model val accuacy: {np.mean(y_val_model_pred == y_val.numpy())}")
-    print(f"model test accuacy: {np.mean(y_test_model_pred == y_test.numpy())}")
 
+    create_checkpoint(model_dir / "tmp.ckpt", model)
+
+    y_train_model_pred = model.predict_batch(X_train)
+    y_val_model_pred = model.predict_batch(X_val)
+    y_test_model_pred = model.predict_batch(X_test)
+    print(
+        f"model train accuacy: {np.mean(y_train_model_pred.numpy() == y_train.numpy())}"
+    )
+    print(f"model val accuacy: {np.mean(y_val_model_pred.numpy() == y_val.numpy())}")
+    print(f"model test accuacy: {np.mean(y_test_model_pred.numpy() == y_test.numpy())}")
+
+    # we calculate explanations, as they dont change and are computational expensive
     with NumpyRandomSeed(42):
         with TorchRandomSeed(42):
-            cfire = CFIRE(
-                localexplainer_fn=ks_fn,
+            kernelshap_mask = torch.arange(0, n_dim)
+            explanations = kernelshap(
+                model=model,
+                data=X_val,
+                targets=y_val_model_pred,  #  target values are model outputs!!!
                 inference_fn=model.predict_batch_softmax,
-                expl_binarization_fn=expl_binarization_fn,
-                frequency_threshold=0.01,
+                n_samples=300,
+                masks=kernelshap_mask,
             )
-            cfire.fit(X_val.numpy(), y_val_model_pred)
-            y_test_cfire_pred = cfire(X_test)
-            acc = np.mean(y_test_model_pred == y_test_cfire_pred)
-            print(f"cfire acc: {acc}")
-            print(f"cfire rules: {cfire.dnf.rules}")
+            torch.save(explanations, model_dir / "explanations.pt")
+            sanity_check = torch.load(model_dir / "explanations.pt")
+            assert torch.equal(explanations, sanity_check)
+            print(explanations[0])
+            print(sanity_check[0])
 
 
 def train_model(
@@ -118,6 +112,8 @@ def train_model(
         with torch.no_grad():
             val_outputs = model(X_val)
             val_loss = criterion(val_outputs, y_val)
+            # TODO: add early stopping? or cant we use validation as we typically do,
+            # as we use validation split for explanaions/cfire?
 
         if (epoch + 1) % 10 == 0:
             print(
