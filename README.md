@@ -1,3 +1,10 @@
+# CFIRE
+
+Tested with Python 3.11.
+
+Install dependencies using `pip install -r requirements.txt`.
+
+
 Had no time to test from a clean install before submission:
 
 0. File to set up conda environment:`cfire_requirements`
