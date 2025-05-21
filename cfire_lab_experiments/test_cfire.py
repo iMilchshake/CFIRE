@@ -6,9 +6,11 @@
 # default_path = "../"
 # os.chdir(default_path)
 
+from typing import List, Tuple
 import numpy as np
 import torch
 from pathlib import Path
+import random
 
 from lxg.datasets import NumpyRandomSeed, TorchRandomSeed
 import lxg.datasets as datasets
@@ -26,6 +28,24 @@ model_dir.mkdir(parents=True, exist_ok=True)
 
 def ks_fn_cached(path):
     return lambda _inference_fn, _data, _targets: torch.load(path)
+
+
+def pprint_dnf_rules(dnf_rules: List[List[List[Tuple[int, Tuple[float, float]]]]]):
+    for class_idx, class_data in enumerate(dnf_rules):
+        print(f"\nClass {class_idx}:\n")
+        rules_str = []
+        for term in class_data:
+            conjuncts = [
+                f"F{feature_dim} ∈ [{low:.2f}, {high:.2f}]"
+                for feature_dim, (low, high) in term
+            ]
+            rules_str.append(" ∧ ".join(conjuncts))
+        print(" ∨\n".join(f"  ({r})" for r in rules_str))
+
+
+def rule_size(dnf_rules: List[List[List[Tuple[int, Tuple[float, float]]]]]) -> int:
+    """Total number of (conjunctive) terms across all classes"""
+    return sum(len(class_data) for class_data in dnf_rules)
 
 
 def main():
@@ -52,9 +72,7 @@ def main():
     # restore training checkpoint
     model_path = model_dir / "tmp.ckpt"
     print(model_path)
-    restore_checkpoint(model_path, model)
-
-    print(type(model))
+    restore_checkpoint(model_path, model, train=False)
 
     y_train_model_pred = model.predict_batch(X_train).numpy()
     y_val_model_pred = model.predict_batch(X_val).numpy()
@@ -64,19 +82,27 @@ def main():
     print(f"model test accuacy: {np.mean(y_test_model_pred == y_test.numpy())}")
 
     # run CFIRE
-    with NumpyRandomSeed(42):
-        with TorchRandomSeed(42):
-            cfire = CFIRE(
-                localexplainer_fn=ks_fn_cached(model_dir / "explanations.pt"),
-                inference_fn=model.predict_batch_softmax,
-                expl_binarization_fn=expl_binarization_fn,
-                frequency_threshold=0.01,
-            )
-            cfire.fit(X_val.numpy(), y_val_model_pred)
-            y_test_cfire_pred = cfire(X_test)
-            acc = np.mean(y_test_model_pred == y_test_cfire_pred)
-            print(f"cfire acc: {acc}")
-            print(f"cfire rules: {cfire.dnf.rules}")
+    for freq_threshold in [0.01, 0.02, 0.05, 0.1]:
+        print(f"### freq_threshold = {freq_threshold}")
+        for idx in range(5):
+            seed = random.randint(0, 2**32 - 1)
+            with NumpyRandomSeed(seed):
+                with TorchRandomSeed(seed):
+                    cfire = CFIRE(
+                        localexplainer_fn=ks_fn_cached(model_dir / "explanations.pt"),
+                        inference_fn=model.predict_batch_softmax,
+                        expl_binarization_fn=expl_binarization_fn,
+                        frequency_threshold=freq_threshold,
+                    )
+                    cfire._verbose = False
+                    cfire.fit(X_val.numpy(), y_val_model_pred)
+                    y_test_cfire_pred = cfire(X_test)
+                    acc = np.mean(y_test_model_pred == y_test_cfire_pred)
+                    print(
+                        f"{idx} cfire acc={acc:.3f}, rule_size={rule_size(cfire.dnf.rules)}"
+                    )
+
+                    # pprint_dnf_rules(cfire.dnf.rules)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 # this script trains a simple FF model and calculates explanations for validation split
 # run `test_cfire.py` after!
 
-
 # TODO: what exactly is this for? we need to run the script from the project root. This way data such as datasets is stored to outside the project directory.. why?
 # import os
 # default_path = "../"
