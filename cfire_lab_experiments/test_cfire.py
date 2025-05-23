@@ -1,11 +1,6 @@
 # this script fits CFIRE based on a trained model and explanations
 # run `test_train.py` before!
 
-# TODO: what exactly is this for? we need to run the script from the project root. This way data such as datasets is stored to outside the project directory.. why?
-# import os
-# default_path = "../"
-# os.chdir(default_path)
-
 from typing import List, Tuple
 import numpy as np
 import torch
@@ -17,7 +12,7 @@ import lxg.datasets as datasets
 from lxg.models import make_ff
 from lxg.util import restore_checkpoint
 from cfire.cfire_module import CFIRE
-from cfire.util import __preprocess_explanations
+from cfire.util import __preprocess_explanations, __preprocess_explanations_ext
 
 from cfire_lab_experiments.util import loader_to_tensor
 
@@ -67,7 +62,8 @@ def main():
     # define model + CFIRE parameters
     # TODO: where is model batch size defined? is it implicit?
     model = make_ff([n_dim, 128, 128, n_classes], torch.nn.ReLU).to("cpu")
-    expl_binarization_fn = lambda x: __preprocess_explanations(x, filtering=0.01) > 0
+    # expl_binarization_fn = lambda x: __preprocess_explanations_ext(x, threshold=0.01) > 0
+    expl_binarization_fn = lambda x: __preprocess_explanations_ext(x, top_k=2) > 0
 
     # restore training checkpoint
     model_path = model_dir / "tmp.ckpt"
@@ -81,11 +77,15 @@ def main():
     print(f"model val accuacy: {np.mean(y_val_model_pred == y_val.numpy())}")
     print(f"model test accuacy: {np.mean(y_test_model_pred == y_test.numpy())}")
 
+    # config TODO: move somewhere nice
+    SEED_COUNT = 1
+    PRINT_RULES = True
+
     # run CFIRE
-    for freq_threshold in [0.01, 0.02, 0.05, 0.1]:
+    seeds = [random.randint(0, 2**32 - 1) for _ in range(SEED_COUNT)]
+    for freq_threshold in [0.01, 0.02, 0.05, 0.1, 0.2]:
         print(f"### freq_threshold = {freq_threshold}")
-        for idx in range(5):
-            seed = random.randint(0, 2**32 - 1)
+        for idx, seed in enumerate(seeds):
             with NumpyRandomSeed(seed):
                 with TorchRandomSeed(seed):
                     cfire = CFIRE(
@@ -99,10 +99,11 @@ def main():
                     y_test_cfire_pred = cfire(X_test)
                     acc = np.mean(y_test_model_pred == y_test_cfire_pred)
                     print(
-                        f"{idx} cfire acc={acc:.3f}, rule_size={rule_size(cfire.dnf.rules)}"
+                        f"[{idx}] seed={seed} cfire acc={acc:.3f}, rule_size={rule_size(cfire.dnf.rules)}"
                     )
 
-                    # pprint_dnf_rules(cfire.dnf.rules)
+                    if PRINT_RULES:
+                        pprint_dnf_rules(cfire.dnf.rules)
 
 
 if __name__ == "__main__":
