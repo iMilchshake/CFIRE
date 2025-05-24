@@ -81,13 +81,15 @@ def main():
     print(f"model test accuacy: {np.mean(y_test_model_pred == y_test.numpy())}")
 
     # config TODO: move somewhere nice
-    SEED_COUNT = 3
+    SEED_COUNT = 15
     PRINT_RULES = False
     DUMP = False
     FREQ_THRESHOLDS = [0.01, 0.02, 0.05, 0.1, 0.2]
 
     # run CFIRE
+    random.seed(42)
     seeds = [random.randint(0, 2**32 - 1) for _ in range(SEED_COUNT)]
+    print(seeds)
     for freq_threshold in FREQ_THRESHOLDS:
         print(f"### freq_threshold = {freq_threshold}")
         for idx, seed in enumerate(seeds):
@@ -101,29 +103,29 @@ def main():
                     )
                     cfire._verbose = False
                     cfire.fit(X_val.numpy(), y_val_model_pred)
-                    y_val_cfire_pred = cfire(X_val)
                     y_test_cfire_pred = cfire(X_test)
+                    y_val_cfire_pred = cfire(X_val)
                     val_acc = np.mean(y_val_model_pred == y_val_cfire_pred)
                     test_acc = np.mean(y_test_model_pred == y_test_cfire_pred)
                     print(
                         f"[{idx}] seed={seed} cfire val_acc={val_acc:.3f}, test_acc={test_acc:.3f}, rule_size={rule_size(cfire.dnf.rules)}"
                     )
-
-                    if PRINT_RULES:
-                        pprint_dnf_rules(cfire.dnf.rules)
-
-                    if DUMP:
-                        torch.save(X_val, experiment_dir / "X_val.pt")
-                        torch.save(y_val, experiment_dir / "y_val.pt")
-                        np.save(
-                            experiment_dir / "y_val_model_pred.npy", y_val_model_pred
-                        )
-                        np.save(
-                            experiment_dir / "y_test_model_pred.npy", y_test_model_pred
-                        )
-                        dnf_path = experiment_dir / "dnf.pkl"
-                        with dnf_path.open("wb") as dnf_file:
-                            pickle.dump(cfire.dnf.rules, dnf_file)
+                    #
+                    # if PRINT_RULES:
+                    #     pprint_dnf_rules(cfire.dnf.rules)
+                    #
+                    # if DUMP:
+                    #     torch.save(X_val, experiment_dir / "X_val.pt")
+                    #     torch.save(y_val, experiment_dir / "y_val.pt")
+                    #     np.save(
+                    #         experiment_dir / "y_val_model_pred.npy", y_val_model_pred
+                    #     )
+                    #     np.save(
+                    #         experiment_dir / "y_test_model_pred.npy", y_test_model_pred
+                    #     )
+                    #     dnf_path = experiment_dir / "dnf.pkl"
+                    #     with dnf_path.open("wb") as dnf_file:
+                    #         pickle.dump(cfire.dnf.rules, dnf_file)
 
 
 if __name__ == "__main__":
