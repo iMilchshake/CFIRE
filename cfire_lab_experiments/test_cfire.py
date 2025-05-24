@@ -78,8 +78,8 @@ def main():
     print(f"model test accuacy: {np.mean(y_test_model_pred == y_test.numpy())}")
 
     # config TODO: move somewhere nice
-    SEED_COUNT = 1
-    PRINT_RULES = True
+    SEED_COUNT = 3
+    PRINT_RULES = False
 
     # run CFIRE
     seeds = [random.randint(0, 2**32 - 1) for _ in range(SEED_COUNT)]
@@ -96,10 +96,12 @@ def main():
                     )
                     cfire._verbose = False
                     cfire.fit(X_val.numpy(), y_val_model_pred)
+                    y_val_cfire_pred = cfire(X_val)
                     y_test_cfire_pred = cfire(X_test)
-                    acc = np.mean(y_test_model_pred == y_test_cfire_pred)
+                    val_acc = np.mean(y_val_model_pred == y_val_cfire_pred)
+                    test_acc = np.mean(y_test_model_pred == y_test_cfire_pred)
                     print(
-                        f"[{idx}] seed={seed} cfire acc={acc:.3f}, rule_size={rule_size(cfire.dnf.rules)}"
+                        f"[{idx}] seed={seed} cfire val_acc={val_acc:.3f}, test_acc={test_acc:.3f}, rule_size={rule_size(cfire.dnf.rules)}"
                     )
 
                     if PRINT_RULES:
