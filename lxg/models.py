@@ -227,8 +227,8 @@ class DNFClassifier:
         self.score = None
 
 
-    def __call__(self, samples):
-        return self.predict(samples)
+    def __call__(self, samples, explain=False):
+        return self.predict(samples, explain=explain)
 
     def __iter__(self):
         self.current = -1
@@ -558,9 +558,11 @@ class DNFClassifier:
                 return applicable[0]
             elif applicable[0]:
                 c = self.rules[0]
-                return (applicable[0], [c[i] for i, a in enumerate(applicable_by_clause[0]) if a])
+                raise NotImplementedError("did not rework this yet for n_classes=1")
+                # return (applicable[0], [c[i] for i, a in enumerate(applicable_by_clause[0]) if a])
             else:
-                return (False, None)
+                raise NotImplementedError("did not rework this yet for n_classes=1")
+                # return (False, None)
 
         if not np.any(applicable):  # reject
             prediction = -1
@@ -613,11 +615,15 @@ class DNFClassifier:
                 raise ValueError
 
         if explain:
-            if isinstance(prediction, int) and prediction == -1:
+            if isinstance(prediction, int) and prediction == -1:   # reject
                 return (-1, None)
 
-            _applicable_terms = [self.rules[prediction][i] for i, a in enumerate(applicable_by_clause[prediction]) if a]
-            prediction = (prediction, _applicable_terms)
+            # collect ALL matching clauses, not just from the predicted class
+            matching_clauses = [((class_idx, clause_idx), self.rules[class_idx][clause_idx])
+                                for class_idx, clauses_active in enumerate(applicable_by_clause)
+                                for clause_idx, active in enumerate(clauses_active) if active]
+
+            return (prediction, matching_clauses)
 
         return prediction
 
