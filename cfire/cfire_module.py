@@ -24,12 +24,24 @@ class CFIRE:
         self._expl_binarization_fn = expl_binarization_fn if expl_binarization_fn is not None else -1
         self._composition_strategy = _comp_greedy_cover
 
-        # Data fields
-        self._explanations = None
-        self._binarized_explanations = None
+        # input samples used for fitting CFIRE object
         self._data = None
         self._labels = None
+
+        # feature importances ("explanations") for the given input samples -> (n_samples, n_features)
+        self._explanations = None
+        self._binarized_explanations = None
+
+        # a list containing the results, with index corresponding to one class each
+        # for each class a tuple with 2 elements is stored
+        #   - *support sets*: The first tuple element is a list of sets with integer values, which correspond to sample inidices,
+        #       when only considering samples of the current class, see -> `data_target` vs. `data_other`.
+        #       Only the support sets for remaining *frequent* itemsets are kept (TODO: why?)
+        #   - *item sets*: the second tuple element is a list of gely.ItemsetNode's, containing *all* (not only frequent) itemsets,
+        #       - therefore not all item sets have a dnf_classifier/accuracy/...
+        #       - the first itemnode is "root/parent" node, including all relevant features
         self._itemsetnodes: list[list[ItemsetNode]] = None
+
         # final DNFClassifier
         self.dnf: DNFClassifier = None
 
@@ -42,8 +54,8 @@ class CFIRE:
         self._meta_data = None  # dictionary placeholder to hold any info, eg about hyperparameters of model
         self._verbose = True
 
-    def __call__(self, X):
-        return self.dnf(X)
+    def __call__(self, X, explain=False):
+        return self.dnf(X, explain=explain)
 
     def _calc_explanations(self):
         time_expl = time.time()
@@ -59,7 +71,6 @@ class CFIRE:
         time_bin_exp = time.time()
         self._binarized_explanations = self._expl_binarization_fn(self._explanations)
         self._compute_times['expl_binarization_fn'] = time.time() - time_bin_exp
-
         return
 
     def _calculate_rule_candidates(self):
@@ -82,6 +93,9 @@ class CFIRE:
                          # 'model_callable': self._inference_fn,
                          'compute_rules': True,
                          }
+            
+            # TODO: uses `generate_synthetic_data`?
+            # TODO: not only closed+frequent, but also "discriminnatory"
             target_class_itemsetnodes = gely_discriminatory(**gely_args)
             self._itemsetnodes.append(target_class_itemsetnodes)
         self._compute_times['_calculate_rule_candidates'] = time.time() - _start_time
@@ -112,16 +126,20 @@ class CFIRE:
             class_dnf = self._composition_strategy(supp, freq_nodes)
             _DNF.append(class_dnf)
         DNF = self.__merge_single_class_dnfs_multiclass_dnf(_DNF)
-        if DNF.tie_break == "accuracy":
+        if DNF.tie_break == "accuracy": # TODO: we check for accuracy here and hardcode it as accuracy?
             DNF.compute_rule_performance(self._data, self._labels)
         self._compute_times['_compose_rule_model'] = time.time() - _start_time
         self.dnf = DNF
         return
 
     def __merge_single_class_dnfs_multiclass_dnf(self, dnfs):
-            rules = [dnf.rules[0] for dnf in dnfs]  # 1 or 0?
+            rules = [dnf.rules[0] for dnf in dnfs]  # 1 or 0? # TODO: we ignore single class dnf tie breaker, do we need it at any point?
             return DNFClassifier(rules, 'accuracy')
 
+    def _verbose_print(self, message):
+        """print wrapper, that only prints if verbose flag is set """
+        if self._verbose:
+            print(message)
 
     def fit(self, X=None, Y=None, save_interim=False):
         if self._is_fit:
@@ -130,21 +148,22 @@ class CFIRE:
             raise NotImplementedError
         self._data = X
         self._labels = Y
-        if self._verbose:
-            print("CFIRE: Calc Expls")
+
+        # get explanations / feature importances (self._binarized_explanations, self._explanations)
+        self._verbose_print("CFIRE: Calc Expls")
         self._calc_explanations()
-        if self._verbose:
-            print(f"took {self._compute_times['_calc_explanations']+self._compute_times['expl_binarization_fn']:.4f}s")
-        if self._verbose:
-            print("CFIRE: Itemset Mining and Rule Candidates")
+        self._verbose_print(f"took {self._compute_times['_calc_explanations']+self._compute_times['expl_binarization_fn']:.4f}s")
+
+        # closed frequent itemset mining (self._itemsetnodes)
+        self._verbose_print("CFIRE: Itemset Mining and Rule Candidates")
         self._calculate_rule_candidates()
-        if self._verbose:
-            print(f"took {self._compute_times['_calculate_rule_candidates']:.4f}s")
-        if self._verbose:
-            print("CFIRE: Select rules")
+        print(len(self._itemsetnodes))
+        print(self._itemsetnodes)
+        self._verbose_print(f"took {self._compute_times['_calculate_rule_candidates']:.4f}s")
+
+        self._verbose_print("CFIRE: Select rules")
         self._compose_rule_model()
-        if self._verbose:
-            print(f"took {self._compute_times['_compose_rule_model']:.4f}s")
+        self._verbose_print(f"took {self._compute_times['_compose_rule_model']:.4f}s")
         return
 
     def eval(self):

@@ -550,7 +550,7 @@ class ItemsetNode():
             _new_dnfs[-1].append([(-1, (np.nan, np.nan))])
 
         assert len(_new_dnfs) == 1
-        new_dnf = DNFClassifier(_new_dnfs, self.dnf.tie_break)
+        new_dnf = DNFClassifier(_new_dnfs, self.dnf.tie_break) # TODO: why do we 'keep' tie break here?
         self.dnf = new_dnf
         self._dnfs.append(new_dnf)
         self.compute_complexity_factor()
