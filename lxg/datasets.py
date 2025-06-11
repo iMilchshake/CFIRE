@@ -62,6 +62,25 @@ class TorchRandomSeed(object):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         torch.set_rng_state(self.prev_random_state)
 
+class RandomSeed:
+    """
+    Context manager that fixes and later restores both numpy and pytorch states
+    """
+    def __init__(self, seed: int):
+        self.seed = seed
+        self._np_state = None
+        self._torch_state = None
+
+    def __enter__(self):
+        self._np_state = np.random.get_state()
+        self._torch_state = torch.get_rng_state()
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        np.random.set_state(self._np_state)
+        torch.set_rng_state(self._torch_state)
+
 # ----------------------------------------------------------------------------------------------------------------------
 
 def _train_test_val_split(X, Y, splits=(50, 20, 30), random_state=42):
