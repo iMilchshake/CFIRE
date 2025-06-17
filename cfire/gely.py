@@ -1,7 +1,10 @@
+from __future__ import annotations # python 3.10 +
 import numpy as np
 from functools import reduce
 from itertools import chain
 from copy import deepcopy
+
+
 
 import sys, warnings
 
@@ -165,15 +168,22 @@ class OrderedSet:
         return self == other
 
 class ItemsetNode():
-    def __init__(self, parent=None, itemset=None, compute_rules=None, rel_items_global=None, n_samples_global=None):
+    def __init__(self, parent : ItemsetNode | None =None, itemset=None, compute_rules=None, rel_items_global: OrderedSet=None, n_samples_global: int =None):
+        '''
+        :param parent:
+        :param itemset:
+        :param compute_rules: if anything other than None rules will be computed
+        :param rel_items_global:
+        :param n_samples_global:
+        '''
         self.parent = parent
         self.depth = parent.depth + 1 if parent is not None else 0
-        self.left = None
-        self.right = None
+        self.left: ItemsetNode | None = None
+        self.right: ItemsetNode | None = None
 
         self.complexity_limit = 8
-        self.rel_items_global = rel_items_global
-        self.n_samples_global = n_samples_global
+        self.rel_items_global: OrderedSet = rel_items_global
+        self.n_samples_global: int = n_samples_global
 
         self.gely_state = None
 
@@ -194,7 +204,8 @@ class ItemsetNode():
         self.recall = np.nan
         self.f1 = np.nan
         self.coverage_ratio = np.nan
-        self.complexity_factor = np.nan
+        #max possible number of rules in binary tree of size complexity_limit and complexity_limit many rules
+        self.complexity_factor = np.nan # 1 - np.log2(self.dnf.n_literals) / np.log2(2**self.complexity_limit * self.complexity_limit)
         self.completeness_factor = np.nan
 
     def get_sibling(self, child):
@@ -246,6 +257,7 @@ class ItemsetNode():
         if self.accuracy is np.nan:
             self.compute_purity(self.data_target, self.data_other)
         return self.accuracy
+
 
     def _get_upper_complexity_bound(self, _n=None):
         # maximum number of literals
@@ -555,9 +567,6 @@ class ItemsetNode():
         self._dnfs.append(new_dnf)
         self.compute_complexity_factor()
 
-
-
-
 class recursionlimit:
     def __init__(self, limit):
         self.limit = limit
@@ -607,10 +616,8 @@ def _ti(Y, D) -> OrderedSet:
     iids = [D[tid] for tid in Y]
     return OrderedSet.intersection(*iids)
 
-
 def get_default_closure(Database):
     return lambda X: _ti(_it(X, Database), Database)
-
 
 ## frequency check and closure operator using binary matrix instead of sets and list
 
@@ -622,7 +629,6 @@ def _ti_binary_matrix(Y, B) -> set:
         intersected = np.expand_dims(intersected, 0)
     intersected = list(intersected)
     return set(intersected)
-
 
 def _it_binary_matrix(X, B) -> set:
     tids = [set(list(np.argwhere(B[:, x]).squeeze(1))) for x in X]
@@ -1010,6 +1016,7 @@ def list_closed_dscriminatory(C, N, i, t, D, I, T, results,
 
     return
 
+# todo Wtf does gely mean?
 def gely_discriminatory(B, threshold, X_target, X_other, item_order, remove_copmlete_transactions=True,
                         subset_test=False, model_callable=None, compute_dt=True, compute_rules=True):
     '''

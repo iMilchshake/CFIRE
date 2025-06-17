@@ -29,7 +29,11 @@ class CFIRE:
         self._binarized_explanations = None
         self._data = None
         self._labels = None
+        # todo typing probably not correct, list[tuple[list[set[int]], list[ItemsetNode]]]
+        # set[int] is idx of sample
         self._itemsetnodes: list[list[ItemsetNode]] = None
+
+
         # final DNFClassifier
         self.dnf: DNFClassifier = None
 
@@ -92,25 +96,34 @@ class CFIRE:
         _start_time = time.time()
         n_classes = len(np.unique(self._labels))
         _DNF = []
+
+        # shape : [( feature_idx, (lower_bound, upper_bound) )]
         dummy_rule = [(-1,(np.nan, np.nan))]
-        for c in range(n_classes):
-            nodes_c = self._itemsetnodes[c]
+
+        for class_idx in range(n_classes):
+            nodes_c = self._itemsetnodes[class_idx]
             if nodes_c is None or len(nodes_c) == 0:
                 _DNF.append([deepcopy(dummy_rule)])
                 continue
-            supp, _all_nodes = nodes_c
+
+            # idx-set of supporting samples, ItemSetNode
+            class_support, _all_nodes = nodes_c
             root = _all_nodes[0]; assert root.parent is None
             freq_nodes = root.get_frequent_children()
             if freq_nodes is None or len(freq_nodes) == 0:
                 _DNF.append([deepcopy(dummy_rule)])
                 continue
             _f, _s = [], []
-            for f, s in zip(freq_nodes, supp):
+            for f, s in zip(freq_nodes, class_support):
                 if len(s) > 0:
                     _f.append(f); _s.append(s)
-            freq_nodes, supp = _f, _s
-            class_dnf = self._composition_strategy(supp, freq_nodes)
+            freq_nodes, class_support = _f, _s
+
+            #per class
+            class_dnf = self._composition_strategy(class_support, freq_nodes)
             _DNF.append(class_dnf)
+
+
         DNF = self.__merge_single_class_dnfs_multiclass_dnf(_DNF)
         if DNF.tie_break == "accuracy":
             DNF.compute_rule_performance(self._data, self._labels)

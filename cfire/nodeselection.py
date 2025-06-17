@@ -59,30 +59,30 @@ def greedy_cover_compl(X: set[int], F: list[tuple[set[int], ItemsetNode]]):
         C.append(_f[1])
     return C
 
+# covers universe by greedily selecting rules that cover the most uncovered items
+def greedy_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[int], ItemsetNode]]):
+    remaining_universe = universe_to_cover.copy()
+    selected_cover_set = []
+    while len(remaining_universe) > 0:
+        # pick next rule by most samples of remaining covered
+        _best_rule = sorted(candidate_rules, key=lambda rule: - len(remaining_universe.intersection(rule[0])))[0]
+        candidate_rules.remove(_best_rule)
+        remaining_universe = remaining_universe - _best_rule[0]
+        selected_cover_set.append(_best_rule[1])
+    return selected_cover_set
 
-def greedy_cover(X: set[int], F: list[tuple[set[int], ItemsetNode]]):
-    U = X.copy()
-    C = []
-    while len(U) > 0:
-        _f = sorted(F, key=lambda x: -len(U.intersection(x[0])))[0]
-        F.remove(_f)
-        U = U - _f[0]
-        C.append(_f[1])
-    return C
 
-
-
-def greedy_score_cover(X: set[int], F: list[tuple[set[int], ItemsetNode]], _lam=0.5, _lam2=0.5, _lam3=0):
-    U = X.copy()
-    C = []
-    while len(U) > 0:
-        _f = sorted(F, key=lambda x: (-x[1].score(_lam, _lam2, _lam3), -len(U.intersection(x[0]))))[0]
-        F.remove(_f)
-        U_new = U - _f[0]
-        if len(U_new) < len(U):  # only add element if it increased coverage
-            C.append(_f[1])
-        U = U_new
-    return C
+def greedy_score_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[int], ItemsetNode]], _lam=0.5, _lam2=0.5, _lam3=0):
+    remaining_universe = universe_to_cover.copy()
+    selected_cover_set = []
+    while len(remaining_universe) > 0:
+        _f = sorted(candidate_rules, key=lambda rule: (-rule[1].score(_lam, _lam2, _lam3), -len(remaining_universe.intersection(rule[0]))))[0]
+        candidate_rules.remove(_f)
+        U_new = remaining_universe - _f[0]
+        if len(U_new) < len(remaining_universe):  # only add element if it increased coverage
+            selected_cover_set.append(_f[1])
+        remaining_universe = U_new
+    return selected_cover_set
 
 def greedy_dynamic_scoring(X: set[int], F: list[tuple[set[int], ItemsetNode]], _lam=0.5, _lam2=0.5, _lam3=0):
     U = X.copy()
@@ -116,9 +116,10 @@ def greedy_score(X: set[int], F: list[tuple[set[int], ItemsetNode]], _lam=0.5):
     return C
 
 
-
 def _comp_greedy_cover(_supp, _node_set):
+    # create universe set of items to be covered
     __items_covered = set(chain.from_iterable(_supp))
+
     nodes = greedy_cover(__items_covered, list(zip(_supp, _node_set)))
     dnf = DNFClassifier([list(chain.from_iterable([n.dnf[0] for n in nodes]))],
                         tie_break="accuracy")
