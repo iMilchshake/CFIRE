@@ -36,11 +36,10 @@ def parse_results(path, experiment_name=None):
                 )
     return pd.DataFrame(rows)
 
-
 # --- 2.  Collect all experiments ------------------------------------------
 files = [
-    "topk=2_frequcy_experiments.txt",
-    "binarise_0.01threshhold_frequqncy_experiment.txt",
+    "topk=2.txt",
+    "binarize_0.01.txt",
 ]
 df = pd.concat([parse_results(f) for f in files], ignore_index=True)
 
@@ -75,6 +74,8 @@ def plot_threshold_sweep(
                else data.groupby([hue, "freq_threshold"])
                .agg({acc_col: "mean", "rule_size": "mean"})
                .reset_index())
+
+
 
     # --- left axis: accuracy ------------------------------------------------
     if average:
@@ -120,13 +121,14 @@ def plot_threshold_sweep(
     combined_handles = handles1 + custom_legend
     combined_labels = labels1 + ["Accuracy", "Rule size"]
 
-    ax1.legend(handles=combined_handles, labels=combined_labels,
-               title="Legend", loc="upper right", borderaxespad=0.5)
+    leg = ax1.legend(handles=combined_handles, labels=combined_labels,
+               title="Legend", loc="upper right", borderaxespad=0.5,
+               frameon=True, facecolor='white', framealpha=1.0, fancybox=True)
 
     fig.tight_layout()
     fig.savefig(f"threshold_sweep_{accuracy}_avg={average}.svg", format="svg")
+    fig.savefig(f"threshold_sweep_{accuracy}_avg={average}.png", format="png")
     plt.show()
-
 
 
 # --- 4.  Examples -----------------------------------------------------------
