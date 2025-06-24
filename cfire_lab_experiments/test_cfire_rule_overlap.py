@@ -1,9 +1,9 @@
-
 from pathlib import Path
 from typing import Callable, Dict, List, Sequence, Set, Tuple, TypedDict, Optional
 import copy
 import logging
 from collections import Counter
+import json
 
 import numpy as np
 import torch
@@ -17,28 +17,30 @@ from cfire.util import __preprocess_explanations_ext
 from cfire_lab_experiments.util import loader_to_tensor
 from .test_cfire import ks_fn_cached, pprint_dnf_rules
 
-PRUNE_WINS_THRESHOLDS = [0, 1, 2, 3, 4, 5]
+# PRUNE_WINS_THRESHOLDS = [0, 1, 2, 3, 4, 5]
+PRUNE_WINS_THRESHOLDS = list(range(0, 25 + 1))
 MODEL_CKPT = Path("./models/tmp.ckpt")
 EXPLANATIONS_PT = Path("./models/explanations.pt")
+SUMMARY_OUT = Path("./cfire_lab_experiments/rule-overlap-analysis/summary.json")
+
+# ensure parent folder(s) exists
+SUMMARY_OUT.parent.mkdir(exist_ok=True)
 
 
-# ------------- utils ------------
-
-# typing helpers
+# --- type helpers ---
 ClauseKey = Tuple[int, int]  # (class, clause-id)
 
 
 class PerfDict(TypedDict):
-    accuracy: float
+    accuracy: float  # i could also add f1 here, but i dont really use it
 
 
+# --- generic helpers ---
 def canon(rule: Sequence) -> Tuple:
-    """Hashable representation of a clause rule."""
     return tuple(rule) if isinstance(rule, list) else rule
 
 
 def build_perf_by_key(cf: CFIRE) -> Dict[ClauseKey, PerfDict]:
-    """Map (cls, cid) → performance dict."""
     return {
         (cls, cid): cf.dnf.rule_performances[cls][canon(rule)]
         for cls, rules in enumerate(cf.dnf.rules)
@@ -46,23 +48,14 @@ def build_perf_by_key(cf: CFIRE) -> Dict[ClauseKey, PerfDict]:
     }
 
 
-def predict_fast(cf: CFIRE, X: torch.Tensor | np.ndarray) -> np.ndarray:
-    """CFIRE prediction without explanation generation."""
-    tensor = X if isinstance(X, torch.Tensor) else torch.as_tensor(X)
-    return cf(tensor)
-
-
 def prune_rules(rule_tree: Sequence[Sequence], to_remove: Set[ClauseKey]):
-    """Return deep-copy of *rule_tree* with specified clauses removed."""
     return [
         [r for cid, r in enumerate(rules) if (cls, cid) not in to_remove]
         for cls, rules in enumerate(rule_tree)
     ]
 
 
-# ------------- model / cfire utils ------------
-
-
+# --- cfire ---
 def load_data():
     loaders = datasets.get_abalone()
     _, test_loader, val_loader, n_dim, n_classes = loaders
@@ -89,11 +82,8 @@ def fit_cfire(model, X_val: torch.Tensor):
     return cfire
 
 
-# ------------- analysis utils ------------
-
-
+# --- analysis ---
 def collect_match_info(cfire: CFIRE, X_val: torch.Tensor):
-    """Return per-sample match keys and unique clause key list."""
     cfire_out = cfire(X_val, explain=True)
     clause_keys: list[ClauseKey] = []
     match_per_sample: list[list[ClauseKey]] = []
@@ -111,7 +101,6 @@ def compute_winners(
     clause_keys: List[ClauseKey],
     perf_by_key: Dict[ClauseKey, PerfDict],
 ):
-    """Return wins, losses, and winner key per sample."""
     key2col = {k: i for i, k in enumerate(clause_keys)}
 
     def best_key(keys: List[ClauseKey]) -> ClauseKey:
@@ -125,11 +114,11 @@ def compute_winners(
     for s, keys in enumerate(match_per_sample):
         if not keys:
             continue
-        winner = best_key(keys)
-        w_col = key2col[winner]
+        w = best_key(keys)
+        w_col = key2col[w]
         winner_idx[s] = w_col
         for k in keys:
-            (wins if k == winner else loss)[key2col[k]] += 1
+            (wins if k == w else loss)[key2col[k]] += 1
 
     winner_key_per_sample: list[Optional[ClauseKey]] = [
         clause_keys[idx] if idx != -1 else None for idx in winner_idx
@@ -148,7 +137,6 @@ def extra_stats(
     n_samples, n_clauses = len(match_per_sample), len(clause_keys)
     key2col = {k: i for i, k in enumerate(clause_keys)}
 
-    # build match matrix M (bool)
     M = np.zeros((n_samples, n_clauses), bool)
     coverage = np.zeros(n_clauses, int)
     match_counts = np.zeros(n_samples, int)
@@ -159,7 +147,6 @@ def extra_stats(
             M[s, j] = True
             coverage[j] += 1
 
-    # coverage / overlap stats
     logging.info("\nCoverage & overlap statistics")
     logging.info(
         "share of samples with ≥2 matches: %.2f%%", (match_counts >= 2).mean() * 100
@@ -184,56 +171,50 @@ def extra_stats(
                 inter[j] += 1
                 inter[k] += 1
 
-    # tie-breaker win/loss analysis
     win_rate = np.divide(
         wins, coverage, out=np.zeros_like(wins, float), where=coverage > 0
-    )
-    ignored_ratio = np.divide(
-        loss, coverage, out=np.zeros_like(loss, float), where=coverage > 0
     )
 
     logging.info("\ntop clauses by tie-breaker looses")
     for idx in np.argsort(-loss):
-        cls, cid = clause_keys[idx]
-        acc = perf_by_key[(cls, cid)]["accuracy"]
+        class_id, clause_id = clause_keys[idx]
         logging.info(
-            "cl %d/term %d | loss %4d (%.1f%% of %3d) | wins %4d | acc %.3f",
-            cls,
-            cid,
+            "cl %d/term %d | loss %4d | wins %4d | acc %.2f | winrate %.2f",
+            class_id,
+            clause_id,
             loss[idx],
-            ignored_ratio[idx] * 100,
-            coverage[idx],
             wins[idx],
-            acc,
+            perf_by_key[(class_id, clause_id)]["accuracy"],
+            win_rate[idx],
         )
 
     logging.info("\ntop clauses by tie-breaker wins")
     for idx in np.argsort(-wins):
-        cls, cid = clause_keys[idx]
-        acc = perf_by_key[(cls, cid)]["accuracy"]
+        class_id, clause_id = clause_keys[idx]
         logging.info(
-            "cl %d/term %d | wins %4d | loss %4d | acc %.3f",
-            cls,
-            cid,
-            wins[idx],
+            "cl %d/term %d | loss %4d | wins %4d | acc %.2f | winrate %.2f",
+            class_id,
+            clause_id,
             loss[idx],
-            acc,
+            wins[idx],
+            perf_by_key[(class_id, clause_id)]["accuracy"],
+            win_rate[idx],
         )
 
     logging.info("\ntop clauses by tie-breaker wins (least wins)")
     for idx in np.argsort(wins):
-        cls, cid = clause_keys[idx]
-        acc = perf_by_key[(cls, cid)]["accuracy"]
+        class_id, clause_id = clause_keys[idx]
         logging.info(
-            "cl %d/term %d | wins %4d | loss %4d | acc %.3f",
-            cls,
-            cid,
-            wins[idx],
+            "cl %d/term %d | loss %4d | wins %4d | acc %.2f | winrate %.2f",
+            class_id,
+            clause_id,
             loss[idx],
-            acc,
+            wins[idx],
+            perf_by_key[(class_id, clause_id)]["accuracy"],
+            win_rate[idx],
         )
 
-    # collision type breakdown
+    # calculate inter vs intra collision count
     intra_res = inter_res = 0
     for keys, w in zip(match_per_sample, winner_key_per_sample):
         if len(keys) <= 1 or w is None:
@@ -243,22 +224,29 @@ def extra_stats(
             inter_res += 1
         else:
             intra_res += 1
-    tot = intra_res + inter_res
-    if tot:
-        logging.info(
-            "\nRule collisions: %.2f%% intra-class | %.2f%% inter-class",
-            intra_res / tot * 100,
-            inter_res / tot * 100,
-        )
+    total_res = intra_res + inter_res
+    logging.info(
+        "\nRule collisions: %.2f%% intra-class | %.2f%% inter-class",
+        intra_res / total_res * 100,
+        inter_res / total_res * 100,
+    )
+
+    # return stats for dumping
+    return dict(
+        match_hist=dict(Counter(match_counts)),
+        share_multi=float((match_counts >= 2).mean() * 100),
+        collision_ratio=dict(
+            intra=float(intra_res / total_res * 100) if total_res else 0.0,
+            inter=float(inter_res / total_res * 100) if total_res else 0.0,
+        ),
+    )
 
 
-# ------------- reporting utils ------------
 def loser_winner_pairs(
     keys: Set[ClauseKey],
     match_per_sample: List[List[ClauseKey]],
     winner_key_per_sample: List[Optional[ClauseKey]],
 ):
-    """Return one (loser, winner) pair per loser that lost at least once."""
     out: list[tuple[ClauseKey, ClauseKey]] = []
     for k in keys:
         for s, mks in enumerate(match_per_sample):
@@ -269,60 +257,33 @@ def loser_winner_pairs(
     return out
 
 
-# def print_removed_detail(
-#     remove: Set[ClauseKey],
-#     clause_keys: List[ClauseKey],
-#     match_per_sample: List[List[ClauseKey]],
-#     winner_key_per_sample: List[Optional[ClauseKey]],
-#     perf_by_key: Dict[ClauseKey, PerfDict],
-# ):
-#     """Verbose per-clause outcome after pruning."""
-#     for key in sorted(remove):
-#         cls, cid = key
-#         acc_loser = perf_by_key[key]["accuracy"]
-#         samples = [i for i, m in enumerate(match_per_sample) if key in m]
-#         winners = [
-#             winner_key_per_sample[i]
-#             for i in samples
-#             if winner_key_per_sample[i] and winner_key_per_sample[i] != key
-#         ]
-#         if not winners:
-#             print(f"cl {cls}/term {cid} -> (no_tie_loss) | acc {acc_loser:.3f}")
-#             continue
-#         win_key, _ = Counter(winners).most_common(1)[0]
-#         acc_w = perf_by_key[win_key]["accuracy"]
-#         print(
-#             f"cl {cls}/term {cid} -> cl {win_key[0]}/term {win_key[1]} | Δacc {acc_w - acc_loser:+.3f} | "
-#             f"same_cls {win_key[0] == cls}"
-#         )
-
-
 def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    # fit CFIRE
+    # build model & CFIRE
     X_val, X_test, n_dim, n_classes = load_data()
     model = build_model(n_dim, n_classes)
     cfire = fit_cfire(model, X_val)
 
     y_val = model.predict_batch(X_val).numpy()
     y_test = model.predict_batch(X_test).numpy()
-    base_val_acc = (predict_fast(cfire, X_val) == y_val).mean()
-    base_test_acc = (predict_fast(cfire, X_test) == y_test).mean()
+    base_val_acc = (cfire(X_val) == y_val).mean()
+    base_test_acc = (cfire(X_test) == y_test).mean()
     logging.info(
-        "\nORIGINAL CFIRE acc vs model → val %.3f | test %.3f",
+        "\nORIGINAL CFIRE acc vs model -> val %.3f | test %.3f",
         base_val_acc,
         base_test_acc,
     )
     pprint_dnf_rules(cfire.dnf.rules)
 
-    # get statistics
     clause_keys, match_per_sample = collect_match_info(cfire, X_val)
     perf_by_key = build_perf_by_key(cfire)
     wins, loss, winner_key_per_sample = compute_winners(
         match_per_sample, clause_keys, perf_by_key
     )
-    extra_stats(
+
+    # verbose stats
+    extra = extra_stats(
         clause_keys,
         match_per_sample,
         wins,
@@ -331,52 +292,7 @@ def main():
         perf_by_key,
     )
 
-    # perform pruning: drop clauses with less wins than the threshold
-    original_rules = copy.deepcopy(cfire.dnf.rules)
-    total_rules = sum(len(r) for r in original_rules)
-
-    logging.info("\nPruning evaluation (absolute wins threshold)")
-    logging.info(
-        f"{'th':<3} {'kept/r':<7} {'val_acc (Δ,%)':<22}"
-        f" {'test_acc (Δ,%)':<24} {'same class%':<10}"
-    )
-    logging.info("-" * 70)
-
-    for thr in PRUNE_WINS_THRESHOLDS:
-        remove: Set[ClauseKey] = {
-            clause_keys[i] for i, w in enumerate(wins) if w <= thr
-        }
-        new_rules = prune_rules(original_rules, remove)
-
-        saved = cfire.dnf.rules
-        cfire.dnf.rules = new_rules
-        val_acc = (predict_fast(cfire, X_val) == y_val).mean()
-        test_acc = (predict_fast(cfire, X_test) == y_test).mean()
-        cfire.dnf.rules = saved
-
-        drop_val_pct = (val_acc - base_val_acc) / base_val_acc * 100
-        drop_test_pct = (test_acc - base_test_acc) / base_test_acc * 100
-
-        pairs = loser_winner_pairs(remove, match_per_sample, winner_key_per_sample)
-        same_ratio = (
-            (sum(1 for l, w in pairs if l[0] == w[0]) / len(pairs) * 100)
-            if pairs
-            else 0
-        )
-
-        kept_col = f"{sum(len(r) for r in new_rules)}/{total_rules}"
-        val_str = f"{val_acc:.3f} ({val_acc-base_val_acc:+.3f},{drop_val_pct:6.2f}%)"
-        test_str = (
-            f"{test_acc:.3f} ({test_acc-base_test_acc:+.3f},{drop_test_pct:6.2f}%)"
-        )
-        logging.info(
-            f"{thr:<3} "
-            f"{kept_col:<7} "
-            f"{val_str:<22} "
-            f"{test_str:<24} "
-            f"{same_ratio:5.1f}%"
-        )
-
+    # clause-level table for dump
     clause_stats = [
         dict(
             cls=k[0],
@@ -388,48 +304,77 @@ def main():
         for k, w, l in zip(clause_keys, wins, loss)
     ]
 
-    match_hist = dict(Counter(match_counts))
-    share_multi_match = float((match_counts >= 2).mean() * 100)
-    collision_ratio = dict(
-        intra=float(intra_res / tot * 100), inter=float(inter_res / tot * 100)
-    )
+    # pruning evaluation
+    original_rules = copy.deepcopy(cfire.dnf.rules)
+    total_rules = sum(len(r) for r in original_rules)
+    pruning_results = []
 
-    prune_tbl = [
-        dict(
-            thr=thr,
-            kept=sum(
-                len(r)
-                for r in prune_rules(
-                    original_rules,
-                    {clause_keys[i] for i, w in enumerate(wins) if w <= thr},
-                )
-            ),
-            total=total_rules,
-            val_acc=float(v),
-            test_acc=float(t),
+    logging.info("\nPruning evaluation (absolute wins threshold)")
+    logging.info(
+        f"{'th':<3} {'kept/r':<7} {'val_acc (Δ,%)':<22}"
+        f" {'test_acc (Δ,%)':<24} {'intra class coll%':<15}"
+    )
+    logging.info("-" * 70)
+
+    for thr in PRUNE_WINS_THRESHOLDS:
+        remove: Set[ClauseKey] = {
+            clause_keys[i] for i, w in enumerate(wins) if w <= thr
+        }
+        new_rules = prune_rules(original_rules, remove)
+
+        # pprint_dnf_rules(new_rules)
+        saved = cfire.dnf.rules
+        cfire.dnf.rules = new_rules
+        val_acc = (cfire(X_val) == y_val).mean()
+        test_acc = (cfire(X_test) == y_test).mean()
+        cfire.dnf.rules = saved
+
+        drop_val_pct = (val_acc - base_val_acc) / base_val_acc * 100
+        drop_test_pct = (test_acc - base_test_acc) / base_test_acc * 100
+
+        pairs = loser_winner_pairs(remove, match_per_sample, winner_key_per_sample)
+        intra_coll_ratio = (
+            (sum(1 for l, w in pairs if l[0] == w[0]) / len(pairs) * 100)
+            if pairs
+            else 0.0
         )
-        for thr, v, t in zip(
-            PRUNE_WINS_THRESHOLDS,  # use vals already computed
-            [val_accs_here],  # store as you loop
-            [test_accs_here],
-        )  # idem
-    ]
 
-    summary = dict(
-        clause_stats=clause_stats,
-        match_hist=match_hist,
-        share_multi_match=share_multi_match,
-        collision_ratio=collision_ratio,
-        pruning=prune_tbl,
-    )
+        kept_cnt = sum(len(r) for r in new_rules)
+        kept_col = f"{kept_cnt}/{total_rules}"
+        val_str = f"{val_acc:.3f} ({val_acc-base_val_acc:+.3f},{drop_val_pct:6.2f}%)"
+        test_str = (
+            f"{test_acc:.3f} ({test_acc-base_test_acc:+.3f},{drop_test_pct:6.2f}%)"
+        )
+        logging.info(
+            f"{thr:<3} {kept_col:<7} {val_str:<22} {test_str:<24} {intra_coll_ratio:5.1f}%"
+        )
 
-    Path("./cfire_stats").mkdir(exist_ok=True)
-    with open("cfire_stats/summary.json", "w") as f:
-        json.dump(summary, f, indent=2)
+        pruning_results.append(
+            dict(
+                thr=thr,
+                kept=kept_cnt,
+                total=total_rules,
+                val_acc=float(val_acc),
+                test_acc=float(test_acc),
+                intra_coll_ratio=intra_coll_ratio,
+            )
+        )
 
     logging.info(
         f"Original CFIRE accuracy – validation: {base_val_acc:.3f}, test: {base_test_acc:.3f}"
     )
+
+    match_hist_py = {int(k): int(v) for k, v in extra["match_hist"].items()}
+    summary = dict(
+        clause_stats=clause_stats,
+        match_hist=match_hist_py,
+        share_multi_match=extra["share_multi"],
+        collision_ratio=extra["collision_ratio"],
+        pruning=pruning_results,
+    )
+    with open(SUMMARY_OUT, "w") as f:
+        json.dump(summary, f, indent=2)
+    logging.info("Saved compact stats -> cfire_stats/summary.json")
 
 
 if __name__ == "__main__":
