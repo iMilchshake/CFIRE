@@ -1,0 +1,75 @@
+model train accuacy: 0.695280437756498
+model val accuacy: 0.6661341853035144
+model test accuacy: 0.645933014354067
+### freq_threshold = 0.01
+[0] seed=39787010 cfire val_acc=0.927, test_acc=0.810, rule_size=93
+[1] seed=3111818191 cfire val_acc=0.915, test_acc=0.815, rule_size=98
+[2] seed=1001606403 cfire val_acc=0.922, test_acc=0.821, rule_size=102
+[3] seed=970635872 cfire val_acc=0.915, test_acc=0.809, rule_size=96
+[4] seed=592702907 cfire val_acc=0.922, test_acc=0.821, rule_size=103
+### freq_threshold = 0.035
+[0] seed=39787010 cfire val_acc=0.901, test_acc=0.821, rule_size=70
+[1] seed=3111818191 cfire val_acc=0.901, test_acc=0.823, rule_size=71
+[2] seed=1001606403 cfire val_acc=0.907, test_acc=0.829, rule_size=82
+[3] seed=970635872 cfire val_acc=0.907, test_acc=0.828, rule_size=82
+[4] seed=592702907 cfire val_acc=0.907, test_acc=0.828, rule_size=82
+### freq_threshold = 0.060000000000000005
+[0] seed=39787010 cfire val_acc=0.864, test_acc=0.767, rule_size=48
+[1] seed=3111818191 cfire val_acc=0.864, test_acc=0.769, rule_size=48
+[2] seed=1001606403 cfire val_acc=0.864, test_acc=0.769, rule_size=48
+[3] seed=970635872 cfire val_acc=0.856, test_acc=0.766, rule_size=42
+[4] seed=592702907 cfire val_acc=0.855, test_acc=0.769, rule_size=44
+### freq_threshold = 0.085
+[0] seed=39787010 cfire val_acc=0.845, test_acc=0.780, rule_size=33
+[1] seed=3111818191 cfire val_acc=0.843, test_acc=0.766, rule_size=36
+[2] seed=1001606403 cfire val_acc=0.840, test_acc=0.769, rule_size=32
+[3] seed=970635872 cfire val_acc=0.843, test_acc=0.766, rule_size=36
+[4] seed=592702907 cfire val_acc=0.843, test_acc=0.766, rule_size=36
+### freq_threshold = 0.11
+[0] seed=39787010 cfire val_acc=0.845, test_acc=0.780, rule_size=33
+[1] seed=3111818191 cfire val_acc=0.843, test_acc=0.766, rule_size=36
+[2] seed=1001606403 cfire val_acc=0.840, test_acc=0.769, rule_size=32
+[3] seed=970635872 cfire val_acc=0.843, test_acc=0.766, rule_size=36
+[4] seed=592702907 cfire val_acc=0.843, test_acc=0.766, rule_size=36
+### freq_threshold = 0.135
+[0] seed=39787010 cfire val_acc=0.847, test_acc=0.777, rule_size=25
+[1] seed=3111818191 cfire val_acc=0.847, test_acc=0.777, rule_size=25
+[2] seed=1001606403 cfire val_acc=0.847, test_acc=0.777, rule_size=25
+[3] seed=970635872 cfire val_acc=0.853, test_acc=0.774, rule_size=28
+[4] seed=592702907 cfire val_acc=0.847, test_acc=0.778, rule_size=25
+### freq_threshold = 0.16000000000000003
+[0] seed=39787010 cfire val_acc=0.847, test_acc=0.778, rule_size=25
+[1] seed=3111818191 cfire val_acc=0.847, test_acc=0.778, rule_size=25
+[2] seed=1001606403 cfire val_acc=0.847, test_acc=0.778, rule_size=25
+[3] seed=970635872 cfire val_acc=0.845, test_acc=0.772, rule_size=24
+[4] seed=592702907 cfire val_acc=0.847, test_acc=0.780, rule_size=25
+### freq_threshold = 0.18500000000000003
+[0] seed=39787010 cfire val_acc=0.845, test_acc=0.781, rule_size=30
+[1] seed=3111818191 cfire val_acc=0.843, test_acc=0.774, rule_size=29
+[2] seed=1001606403 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+[3] seed=970635872 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+[4] seed=592702907 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+### freq_threshold = 0.21000000000000002
+[0] seed=39787010 cfire val_acc=0.845, test_acc=0.781, rule_size=30
+[1] seed=3111818191 cfire val_acc=0.843, test_acc=0.774, rule_size=29
+[2] seed=1001606403 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+[3] seed=970635872 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+[4] seed=592702907 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+### freq_threshold = 0.23500000000000001
+[0] seed=39787010 cfire val_acc=0.845, test_acc=0.781, rule_size=30
+[1] seed=3111818191 cfire val_acc=0.843, test_acc=0.774, rule_size=29
+[2] seed=1001606403 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+[3] seed=970635872 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+[4] seed=592702907 cfire val_acc=0.845, test_acc=0.780, rule_size=30
+### freq_threshold = 0.26
+[0] seed=39787010 cfire val_acc=0.845, test_acc=0.783, rule_size=28
+[1] seed=3111818191 cfire val_acc=0.843, test_acc=0.775, rule_size=27
+[2] seed=1001606403 cfire val_acc=0.845, test_acc=0.781, rule_size=28
+[3] seed=970635872 cfire val_acc=0.843, test_acc=0.775, rule_size=27
+[4] seed=592702907 cfire val_acc=0.845, test_acc=0.783, rule_size=28
+### freq_threshold = 0.28500000000000003
+[0] seed=39787010 cfire val_acc=0.834, test_acc=0.781, rule_size=22
+[1] seed=3111818191 cfire val_acc=0.845, test_acc=0.783, rule_size=28
+[2] seed=1001606403 cfire val_acc=0.835, test_acc=0.781, rule_size=22
+[3] seed=970635872 cfire val_acc=0.845, test_acc=0.781, rule_size=28
+[4] seed=592702907 cfire val_acc=0.834, test_acc=0.781, rule_size=22

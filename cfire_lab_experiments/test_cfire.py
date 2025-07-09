@@ -40,6 +40,53 @@ def pprint_dnf_rules(dnf_rules: List[List[List[Tuple[int, Tuple[float, float]]]]
             rules_str.append(" ∧ ".join(conjuncts))
         print(" ∨\n".join(f"  ({r})" for r in rules_str))
 
+def pprint_literal_stats(
+        dnf,
+        *,
+        show_literals: bool = False,
+        precision: int = 3,
+        heading: str | None = None,
+) -> None:
+    """
+    Print a report on literal usage inside a DNFClassifier
+
+    Parameters
+    ----------
+    dnf : DNFClassifier
+        Classifier whose rules are inspected.
+    show_literals : bool, default=False
+        If *True* list every literal of every class.
+    precision : int, default=3
+        Decimal places shown for thresholds.
+    heading : str | None
+        Optional title printed before the table.
+    """
+    if heading:
+        print(heading)
+
+
+    per_cls_unique = dnf.unique_literals_per_class()          # list[set]
+    global_unique   = set().union(*per_cls_unique)
+
+    # Non-unique counts
+    per_cls_total = [ sum(len(clause) for clause in class_dnf) for class_dnf in dnf.rules ]
+    global_total = sum(per_cls_total)
+
+    print(f"── Overall ─────────────────────────────────────────────")
+    print(f"• total literals (non-unique): {global_total}")
+    print(f"• unique literals           : {len(global_unique)}")
+
+    # Per-class breakdown
+    for cls_idx, (tot, uniq_set) in enumerate(zip(per_cls_total, per_cls_unique)):
+        print(f"\nClass {cls_idx}:")
+        print(f"   non-unique literals : {tot}")
+        print(f"   unique   literals   : {len(uniq_set)}")
+
+        if show_literals:
+            for dim, (lo, hi) in sorted(uniq_set):
+                lo_s = f'{lo:.{precision}f}' if np.isfinite(lo) else "-∞"
+                hi_s = f'{hi:.{precision}f}' if np.isfinite(hi) else "∞"
+                print(f"      • F{dim} ∈ [{lo_s}, {hi_s}]")
 
 def rule_size(dnf_rules: List[List[List[Tuple[int, Tuple[float, float]]]]]) -> int:
     """Total number of (conjunctive) terms across all classes"""
@@ -110,6 +157,27 @@ def main():
                     print(
                         f"[{idx}] seed={seed} cfire val_acc={val_acc:.3f}, test_acc={test_acc:.3f}, rule_size={rule_size(cfire.dnf.rules)}"
                     )
+                    pprint_literal_stats(
+                        cfire.dnf,
+                        show_literals=False,
+                        heading=f"Literal stats  (seed={seed},  freq={freq_threshold})"
+                    )
+                    #
+                    # if PRINT_RULES:
+                    #     pprint_dnf_rules(cfire.dnf.rules)
+                    #
+                    # if DUMP:
+                    #     torch.save(X_val, experiment_dir / "X_val.pt")
+                    #     torch.save(y_val, experiment_dir / "y_val.pt")
+                    #     np.save(
+                    #         experiment_dir / "y_val_model_pred.npy", y_val_model_pred
+                    #     )
+                    #     np.save(
+                    #         experiment_dir / "y_test_model_pred.npy", y_test_model_pred
+                    #     )
+                    #     dnf_path = experiment_dir / "dnf.pkl"
+                    #     with dnf_path.open("wb") as dnf_file:
+                    #         pickle.dump(cfire.dnf.rules, dnf_file)
                     if PRINT_RULES:
                         pprint_dnf_rules(cfire.dnf.rules)
 

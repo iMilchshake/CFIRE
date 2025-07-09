@@ -69,7 +69,6 @@ class SimpleTorchWrapper():
         return None
 
 
-
 class RuleClassifier:
     def __init__(self, rules: list[list[list[tuple]]]):
         # rule format: dimension, interval -> tuple(dimension, tuple(lower_limit, upper_limit))
@@ -216,6 +215,11 @@ class DNFClassifier:
         # rule format: dimension, interval -> tuple(dimension, tuple(lower_limit, upper_limit))
         self.n_classes = len(rules)
         self.rules = rules
+        #self.rules: List[List[List[Tuple[int, Tuple[float, float]]]]]
+                      #^    ^    ^    Tupble : literals
+                      #|    |    └─ AND for the literals
+                      #|    └───── OR conjunctions
+                      #└────────── Class DNF: list of clauses, one per class
         self.purge_dummy_rules()
         self.rule_performances = {c: {} for c in range(self.n_classes)}  # dict to collect performance statistics of rules
         self.tie_break = tie_break
@@ -272,8 +276,67 @@ class DNFClassifier:
         for c in range(self.n_classes):
             c_dnf = self.rules[c]
             n_literals += sum([len(term) for term in c_dnf])
-
         return n_literals
+
+    def unique_literals(self) -> set[tuple[int, tuple[float, float]]]:
+        """
+        Return a *set* containing every literal that appears in *any* clause
+        of *any* class.
+        """
+        uniq = set()
+        for class_dnf in self.rules:          # ⋯ iterate classes
+            for clause in class_dnf:          # ⋯ iterate OR-clauses
+                for lit in clause:            # ⋯ iterate AND-literals
+                    uniq.add(tuple(lit))      # lit is already a 2-tuple
+        return uniq
+
+    def unique_literals_per_class(self) -> list[set[tuple[int, tuple[float, float]]]]:
+        """
+        Return a *list* with length == ``self.n_classes``.
+        Each element is the *set* of unique literals that appear in that
+        particular class’ DNF.
+
+        usage ex:
+         dnf.unique_literals_per_class()[0]   # all literals used for class-0
+        { (2, (-inf,  0.5)), (4, (1.1, inf)), ... }
+        """
+        per_class = []
+        for class_dnf in self.rules:
+            lit_set = set()
+            for clause in class_dnf:          # OR-clauses
+                lit_set.update(clause)        # add *all* literals in clause
+            per_class.append(lit_set)
+        return per_class
+
+    def n_unique_literals45(self) -> int:
+        """Shorthand for len(self.unique_literals())."""
+
+        length = len(self.unique_literals())
+        print(length)
+        return length
+
+    def n_unique_literals_per_class(self) -> list[int]:
+        """
+        Shorthand that just returns ``[len(s) for s in unique_literals_per_class()]``.
+        """
+        return [len(s) for s in self.unique_literals_per_class()]
+
+    def __comp_n_unique_literals(self) -> int:
+        """
+        Return the number of unique literals that occur in the whole DNF.
+
+        A literal is identified by its complete 2-tuple ``(dim, (lower, upper))``.
+        If the exact same literal shows up multiple times (even across different
+        clauses or classes) it is only counted **once**.
+        """
+        print("we are couting unique literals")
+        unique_literals: set[tuple[int, tuple[float, float]]] = set()
+
+        for class_rules in self.rules:
+            for clause in class_rules:
+                unique_literals.update(clause)
+
+        return len(unique_literals)
 
     def get_n_terms(self):
         return self.n_literals
@@ -346,6 +409,7 @@ class DNFClassifier:
 
         self.__set_rules(new_rules)
 
+    ## todo, not sure why remove here
     def remove_empirically_redundant_rules(self, X, min_complexity=True):
         assert self.tie_break != "random"
         _tie_break = self.tie_break
