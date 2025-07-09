@@ -1,0 +1,350 @@
+-- freq=0.005 | binarization_threshold=0.005 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.148
+max_offdiag_iou        : 0.443
+summed_root_volume     : 88.101
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.296 29.406 56.399]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.000
+Class 1    0.001   1.000   0.443
+Class 2    0.000   0.443   1.000
+
+-- freq=0.005 | binarization_threshold=0.01 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.148
+max_offdiag_iou        : 0.442
+summed_root_volume     : 87.855
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.565 29.021 56.27 ]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.000
+Class 1    0.002   1.000   0.442
+Class 2    0.000   0.442   1.000
+
+-- freq=0.005 | binarization_threshold=0.02 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.148
+max_offdiag_iou        : 0.443
+summed_root_volume     : 88.429
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 29.474 56.399]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.001
+Class 1    0.001   1.000   0.443
+Class 2    0.001   0.443   1.000
+
+-- freq=0.005 | binarization_threshold=0.05 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.147
+max_offdiag_iou        : 0.438
+summed_root_volume     : 88.320
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 28.928 56.836]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.001
+Class 1    0.001   1.000   0.438
+Class 2    0.001   0.438   1.000
+
+-- freq=0.005 | binarization_threshold=0.1 ------------------------------
+rule_size              : 89
+mean_offdiag_iou       : 0.154
+max_offdiag_iou        : 0.459
+summed_root_volume     : 68.355
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 28.859 36.94 ]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.000
+Class 1    0.001   1.000   0.459
+Class 2    0.000   0.459   1.000
+
+-- freq=0.01 | binarization_threshold=0.005 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.149
+max_offdiag_iou        : 0.445
+summed_root_volume     : 88.336
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.296 29.406 56.634]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.000
+Class 1    0.001   1.000   0.445
+Class 2    0.000   0.445   1.000
+
+-- freq=0.01 | binarization_threshold=0.01 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.148
+max_offdiag_iou        : 0.443
+summed_root_volume     : 88.561
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.565 29.623 56.373]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.000
+Class 1    0.002   1.000   0.443
+Class 2    0.000   0.443   1.000
+
+-- freq=0.01 | binarization_threshold=0.02 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.148
+max_offdiag_iou        : 0.442
+summed_root_volume     : 87.801
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 28.872 56.373]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.001
+Class 1    0.001   1.000   0.442
+Class 2    0.001   0.442   1.000
+
+-- freq=0.01 | binarization_threshold=0.05 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.148
+max_offdiag_iou        : 0.443
+summed_root_volume     : 88.223
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 28.872 56.795]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.001
+Class 1    0.001   1.000   0.443
+Class 2    0.001   0.443   1.000
+
+-- freq=0.01 | binarization_threshold=0.1 ------------------------------
+rule_size              : 89
+mean_offdiag_iou       : 0.159
+max_offdiag_iou        : 0.475
+summed_root_volume     : 70.357
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 29.716 38.086]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.001
+Class 1    0.001   1.000   0.475
+Class 2    0.001   0.475   1.000
+
+-- freq=0.02 | binarization_threshold=0.005 ------------------------------
+rule_size              : 102
+mean_offdiag_iou       : 0.157
+max_offdiag_iou        : 0.438
+summed_root_volume     : 94.334
+domain_root_volume     : 7.704
+class_root_volumes     : [ 9.692 28.238 56.403]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.028   0.006
+Class 1    0.028   1.000   0.438
+Class 2    0.006   0.438   1.000
+
+-- freq=0.02 | binarization_threshold=0.01 ------------------------------
+rule_size              : 102
+mean_offdiag_iou       : 0.158
+max_offdiag_iou        : 0.441
+summed_root_volume     : 94.988
+domain_root_volume     : 7.704
+class_root_volumes     : [ 9.692 28.803 56.492]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.027   0.006
+Class 1    0.027   1.000   0.441
+Class 2    0.006   0.441   1.000
+
+-- freq=0.02 | binarization_threshold=0.02 ------------------------------
+rule_size              : 102
+mean_offdiag_iou       : 0.158
+max_offdiag_iou        : 0.439
+summed_root_volume     : 94.654
+domain_root_volume     : 7.704
+class_root_volumes     : [ 9.692 28.17  56.792]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.028   0.006
+Class 1    0.028   1.000   0.439
+Class 2    0.006   0.439   1.000
+
+-- freq=0.02 | binarization_threshold=0.05 ------------------------------
+rule_size              : 102
+mean_offdiag_iou       : 0.158
+max_offdiag_iou        : 0.442
+summed_root_volume     : 95.304
+domain_root_volume     : 7.704
+class_root_volumes     : [ 9.692 29.021 56.591]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.028   0.006
+Class 1    0.028   1.000   0.442
+Class 2    0.006   0.442   1.000
+
+-- freq=0.02 | binarization_threshold=0.1 ------------------------------
+rule_size              : 89
+mean_offdiag_iou       : 0.156
+max_offdiag_iou        : 0.467
+summed_root_volume     : 68.926
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 29.554 36.815]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.000
+Class 1    0.001   1.000   0.467
+Class 2    0.000   0.467   1.000
+
+-- freq=0.05 | binarization_threshold=0.005 ------------------------------
+rule_size              : 97
+mean_offdiag_iou       : 0.221
+max_offdiag_iou        : 0.662
+summed_root_volume     : 87.322
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 27.975 56.792]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.001
+Class 1    0.002   1.000   0.662
+Class 2    0.001   0.662   1.000
+
+-- freq=0.05 | binarization_threshold=0.01 ------------------------------
+rule_size              : 97
+mean_offdiag_iou       : 0.220
+max_offdiag_iou        : 0.656
+summed_root_volume     : 87.087
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 27.975 56.557]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.001
+Class 1    0.002   1.000   0.656
+Class 2    0.001   0.656   1.000
+
+-- freq=0.05 | binarization_threshold=0.02 ------------------------------
+rule_size              : 94
+mean_offdiag_iou       : 0.123
+max_offdiag_iou        : 0.368
+summed_root_volume     : 85.961
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 26.514 56.891]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.001
+Class 1    0.001   1.000   0.368
+Class 2    0.001   0.368   1.000
+
+-- freq=0.05 | binarization_threshold=0.05 ------------------------------
+rule_size              : 90
+mean_offdiag_iou       : 0.101
+max_offdiag_iou        : 0.302
+summed_root_volume     : 87.442
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 28.09  56.796]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.001
+Class 1    0.002   1.000   0.302
+Class 2    0.001   0.302   1.000
+
+-- freq=0.05 | binarization_threshold=0.1 ------------------------------
+rule_size              : 87
+mean_offdiag_iou       : 0.094
+max_offdiag_iou        : 0.278
+summed_root_volume     : 63.906
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 24.794 36.556]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.000
+Class 1    0.002   1.000   0.278
+Class 2    0.000   0.278   1.000
+
+-- freq=0.1 | binarization_threshold=0.005 ------------------------------
+rule_size              : 103
+mean_offdiag_iou       : 0.117
+max_offdiag_iou        : 0.348
+summed_root_volume     : 81.371
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 18.793 60.022]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.001
+Class 1    0.002   1.000   0.348
+Class 2    0.001   0.348   1.000
+
+-- freq=0.1 | binarization_threshold=0.01 ------------------------------
+rule_size              : 103
+mean_offdiag_iou       : 0.117
+max_offdiag_iou        : 0.348
+summed_root_volume     : 81.558
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 18.793 60.21 ]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.001
+Class 1    0.002   1.000   0.348
+Class 2    0.001   0.348   1.000
+
+-- freq=0.1 | binarization_threshold=0.02 ------------------------------
+rule_size              : 101
+mean_offdiag_iou       : 0.116
+max_offdiag_iou        : 0.345
+summed_root_volume     : 80.129
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 18.793 58.781]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.002   0.001
+Class 1    0.002   1.000   0.345
+Class 2    0.001   0.345   1.000
+
+-- freq=0.1 | binarization_threshold=0.05 ------------------------------
+rule_size              : 98
+mean_offdiag_iou       : 0.173
+max_offdiag_iou        : 0.516
+summed_root_volume     : 84.585
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 26.773 55.257]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.001
+Class 1    0.001   1.000   0.516
+Class 2    0.001   0.516   1.000
+
+-- freq=0.1 | binarization_threshold=0.1 ------------------------------
+rule_size              : 92
+mean_offdiag_iou       : 0.195
+max_offdiag_iou        : 0.583
+summed_root_volume     : 83.488
+domain_root_volume     : 7.704
+class_root_volumes     : [ 2.556 27.927 53.005]
+
+IoU matrix
+           C 0  C 1  C 2
+Class 0    1.000   0.001   0.001
+Class 1    0.001   1.000   0.583
+Class 2    0.001   0.583   1.000
+
