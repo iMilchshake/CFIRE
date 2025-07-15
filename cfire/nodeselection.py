@@ -62,6 +62,7 @@ def greedy_cover_compl(X: set[int], F: list[tuple[set[int], ItemsetNode]]):
     return C
 
 # covers universe by greedily selecting rules that cover the most uncovered items
+# this is called once per class
 def greedy_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[int], ItemsetNode]]):
     remaining_universe = universe_to_cover.copy()
     selected_cover_set = []

@@ -135,9 +135,10 @@ class CFIRE:
                     _f.append(f); _s.append(s)
             freq_nodes, class_support = _f, _s
 
-            #per class
-            class_dnf = self._composition_strategy(class_support, freq_nodes)
-            _DNF.append(class_dnf)
+        # per class
+        # TODO: run this for all classes at once, fix current greedy
+        class_dnf = self._composition_strategy(class_support, freq_nodes)
+        _DNF.append(class_dnf)
 
 
         DNF = self.__merge_single_class_dnfs_multiclass_dnf(_DNF)
