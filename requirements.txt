@@ -9,3 +9,5 @@ captum==0.8.0
 cmaes==0.11.1
 Sphinx==8.2.3
 seaborn==0.13.2
+
+pulp==3.2.1
