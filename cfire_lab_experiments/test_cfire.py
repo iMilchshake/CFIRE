@@ -8,6 +8,9 @@ from pathlib import Path
 import random
 import pickle
 
+from cfire.nodeselection import _comp_ilp_optimal
+from cfire_lab_experiments.boxOverlaps import compute_domain_bounds, compute_overlap_matrix, print_class_overlap, \
+    compute_class_root_volumes
 from lxg.datasets import NumpyRandomSeed, TorchRandomSeed
 import lxg.datasets as datasets
 from lxg.models import make_ff
@@ -149,6 +152,14 @@ def main():
                     )
                     cfire._verbose = False
                     cfire.fit(X_val.numpy(), y_val_model_pred)
+                    print(X_train)
+                    bounds = compute_domain_bounds(X_train)
+                    iou = compute_overlap_matrix(cfire.dnf, bounds, metric="iou")
+                    print_class_overlap(iou)
+
+                    # todo, reason about volumes in comparison summed class volumes and domain volume
+                    class_volumes, summed_class_volume, domain_volume = compute_class_root_volumes(cfire.dnf, bounds)
+
 
                     y_val_cfire_pred = cfire(X_val)
                     y_test_cfire_pred = cfire(X_test)

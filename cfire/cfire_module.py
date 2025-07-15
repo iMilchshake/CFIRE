@@ -13,7 +13,7 @@ from cfire.nodeselection import _comp_greedy_cover
 class CFIRE:
 
     def __init__(self, localexplainer_fn, inference_fn, expl_binarization_fn=None,
-                 frequency_threshold=0.01, meta_data=None):
+                 frequency_threshold=0.01, composition_strategy=_comp_greedy_cover,max_dt_depth=7, meta_data=None):
         # MISSING:
         # - behavior of grid search during rule fitting (min/max_depth),
         # - inference strategy for DNF
@@ -22,7 +22,7 @@ class CFIRE:
         self._localexplainer_fn = localexplainer_fn
         self._inference_fn = inference_fn
         self._expl_binarization_fn = expl_binarization_fn if expl_binarization_fn is not None else -1
-        self._composition_strategy = _comp_greedy_cover
+        self._composition_strategy = composition_strategy
 
         # input samples used for fitting CFIRE object
         self._data = None
@@ -48,6 +48,7 @@ class CFIRE:
         self.dnf: DNFClassifier = None
 
         # Hyperparameters
+        self._max_dt_depth = max_dt_depth
         self._frequency_threshold = frequency_threshold
 
         self._is_fit = False
@@ -94,6 +95,7 @@ class CFIRE:
                          'item_order': item_order,
                          # 'model_callable': self._inference_fn,
                          'compute_rules': True,
+                         'dt_kwargs': {'max_depth': self._max_dt_depth},
                          }
 
             # TODO: uses `generate_synthetic_data`?

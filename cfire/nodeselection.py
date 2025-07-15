@@ -5,6 +5,8 @@ import numpy as np
 from lxg.models import DNFClassifier
 from .gely import ItemsetNode
 from .util import load_nn_dnfs
+from itertools import chain
+import pulp
 
 def greedy_itemsetnode_set_cover(X: set[int], F: list[tuple[set[int], ItemsetNode]]):
     '''
@@ -158,6 +160,72 @@ def comp_variants_dnfs(_supp, _node_set):
     dnf_score_cover = DNFClassifier([list(chain.from_iterable([n.dnf[0] for n in nodes_score_cover]))])
     # dnf_score = DNFClassifier([list(chain.from_iterable([n.dnf[0] for n in nodes_score]))])\
     return [dnf_cover, dnf_compl_cover, dnf_score_cover]
+
+
+## after submission implementations of new variants
+
+# currently complexity factor as cost
+def _comp_ilp_optimal(supp, nodes):
+    chosen_nodes = solve_ilp_set_cover(supp, nodes, cost_key=lambda n: n.complexity_factor)
+    return DNFClassifier(
+        [list(chain.from_iterable([n.dnf[0] for n in chosen_nodes]))],
+        tie_break="accuracy",
+    )
+
+def solve_ilp_set_cover(support_sets, nodes,
+                        cost_key=lambda n: 1,
+                        time_limit=None):
+    """
+    Exact 0-1 set cover via MILP.
+    Returns the *list of ItemsetNode* chosen by the solver.
+    """
+    print("Solving set cover via ILP..., TAKES TIME")
+    m = pulp.LpProblem("SetCover", pulp.LpMinimize)
+    x = [pulp.LpVariable(f"x_{i}", 0, 1, cat="Binary")
+         for i in range(len(nodes))]
+
+    # objective: min sum(cost_i * x_i)
+    m += pulp.lpSum(cost_key(nodes[i]) * x[i] for i in range(len(nodes)))
+
+    # cover constraints
+    universe = list(set(chain.from_iterable(support_sets)))
+    for j in universe:
+        covering_rules = [i for i, S in enumerate(support_sets) if j in S]
+        m += pulp.lpSum(x[i] for i in covering_rules) >= 1
+
+    if time_limit is not None:
+        m.solve(pulp.PULP_CBC_CMD(timeLimit=time_limit))
+    else:
+        m.solve()
+
+    return [nodes[i] for i in range(len(nodes)) if pulp.value(x[i]) > 0.5]
+
+def _comp_greedy_plus_1opt(supp, nodes):
+    first = greedy_cover(set().union(*supp), list(zip(supp, nodes)))
+    cleaned = one_opt_prune(first, supp, nodes)   # implement the 1-opt loop
+    return DNFClassifier([list(chain.from_iterable([n.dnf[0] for n in cleaned]))],
+                         tie_break="accuracy")
+
+def one_opt_prune(chosen_nodes,
+                  support_sets,
+                  all_nodes):          # mapping Node → support set
+    """
+    Removes any rule whose removal leaves full coverage intact.
+    `chosen_nodes` is an *ordered list* output by a greedy selector.
+    """
+    # Build a mapping node → support for quick set ops
+    supp_map = {n: s for n, s in zip(all_nodes, support_sets)}
+    covered_universe = set.union(*(supp_map[n] for n in chosen_nodes))
+
+    pruned = []
+    for n in chosen_nodes:
+        # Universe covered by others
+        rest_support = set.union(*(supp_map[o] for o in chosen_nodes if o != n))
+        if rest_support == covered_universe:
+            continue  # n is redundant
+        pruned.append(n)
+    return pruned
+
 
 if __name__ == '__main__':
     support_idxs = None

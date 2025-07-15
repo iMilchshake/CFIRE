@@ -327,7 +327,7 @@ class DNFClassifier:
 
         A literal is identified by its complete 2-tuple ``(dim, (lower, upper))``.
         If the exact same literal shows up multiple times (even across different
-        clauses or classes) it is only counted **once**.
+        clauses or classes) it is only counted once.
         """
         print("we are couting unique literals")
         unique_literals: set[tuple[int, tuple[float, float]]] = set()

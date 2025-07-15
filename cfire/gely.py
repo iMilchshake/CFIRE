@@ -900,7 +900,7 @@ def list_closed_no_rules(C, N, i, t, D, I, T, results, closure=None, parent: Ite
 
 def list_closed_dscriminatory(C, N, i, t, D, I, T, results,
                               data_target, data_other, closure=None, parent: ItemsetNode=None,
-                              subset_test=False, direction=None, model_callable=None):
+                              subset_test=False, direction=None, model_callable=None, dt_kwargs=None):
     # TODO
     #  subset_test ->
     #  Q: should we filter data according to support and even put data from other nodes into other?
@@ -951,17 +951,22 @@ def list_closed_dscriminatory(C, N, i, t, D, I, T, results,
 
         if is_frequent:
             # model callable takes data and returns True if sample is in target class, False otherwise
-            dt_kwargs = None
             if model_callable is not None:
-                _synthetic_data_target, _synthetic_data_other = generate_synthetic_data(_data_target, data_other, model_callable, list(_C_prime))
+                _synthetic_data_target, _synthetic_data_other = generate_synthetic_data(
+                    _data_target, data_other, model_callable, list(_C_prime)
+                )
                 # print(f"generated {len(_synthetic_data_other)+len(_synthetic_data_target)} samples")
                 if len(_synthetic_data_target) > 0:
                     _enriched_data_target = np.vstack([_data_target, _synthetic_data_target])
-                    dt_kwargs = {'class_weight': ['balanced']}
+                    if dt_kwargs is None:
+                        dt_kwargs = {}
+                    dt_kwargs['class_weight'] = ['balanced']
                 else:
                     _enriched_data_target = _data_target
                 if len(_synthetic_data_other) > 0:
-                    dt_kwargs = {'class_weight': ['balanced']}
+                    if dt_kwargs is None:
+                        dt_kwargs = {}
+                    dt_kwargs['class_weight'] = ['balanced']
                     _enriched_data_other = np.vstack([data_other, _synthetic_data_other])
                 else:
                     _enriched_data_other = data_other
@@ -1016,9 +1021,9 @@ def list_closed_dscriminatory(C, N, i, t, D, I, T, results,
 
     return
 
-# todo Wtf does gely mean?
+
 def gely_discriminatory(B, threshold, X_target, X_other, item_order, remove_copmlete_transactions=True,
-                        subset_test=False, model_callable=None, compute_dt=True, compute_rules=True):
+                        subset_test=False, model_callable=None, compute_dt=True, compute_rules=True, dt_kwargs=None):
     '''
     :param D: Is a binary matrix;
               Columns = Items, index used as ordering
@@ -1100,7 +1105,8 @@ def gely_discriminatory(B, threshold, X_target, X_other, item_order, remove_copm
             list_closed_dscriminatory(
                 C=OrderedSet(), N=OrderedSet(), i=I[0], t=_t, D=_D, I=I, T=T,
                 results=_fcis, data_target=X_target.copy(), data_other=X_other, parent=root_node,
-                closure=closure, subset_test=subset_test, model_callable=model_callable
+                closure=closure, subset_test=subset_test, model_callable=model_callable,
+                dt_kwargs=dt_kwargs # passed the dt depth
             )
     except RecursionError as e:
         if hasattr(e, 'message'):
