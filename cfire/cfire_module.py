@@ -10,6 +10,14 @@ from lxg.models import DNFClassifier
 from cfire.gely import gely_discriminatory, ItemsetNode
 from cfire.nodeselection import _comp_greedy_cover
 
+from typing import NamedTuple
+
+class ItemsetNodeCollection(NamedTuple):
+    """ holds a list of `ItemsetNodes` and their corresponding support set """
+    class_support: list[set[int]]
+    nodes: list[ItemsetNode]
+
+
 class CFIRE:
 
     def __init__(self, localexplainer_fn, inference_fn, expl_binarization_fn=None,
@@ -43,6 +51,8 @@ class CFIRE:
         # TODO: typing probably not correct, list[tuple[list[set[int]], list[ItemsetNode]]]
         self._itemsetnodes: list[list[ItemsetNode]] = None
 
+        # store input to composition strategy
+        self.frequent_nodes: list[ItemsetNodeCollection] = []
 
         # final DNFClassifier
         self.dnf: DNFClassifier = None
@@ -135,11 +145,11 @@ class CFIRE:
                     _f.append(f); _s.append(s)
             freq_nodes, class_support = _f, _s
 
-            # per class
-            # TODO: run this for all classes at once, fix current greedy
+            # save input to composition strategy for future analysis
+            self.frequent_nodes.append(ItemsetNodeCollection(class_support, freq_nodes))
+
             class_dnf = self._composition_strategy(class_support, freq_nodes)
             _DNF.append(class_dnf)
-
 
         DNF = self.__merge_single_class_dnfs_multiclass_dnf(_DNF)
         if DNF.tie_break == "accuracy": # TODO: we check for accuracy here and hardcode it as accuracy?

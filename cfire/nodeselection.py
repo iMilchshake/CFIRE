@@ -1,6 +1,9 @@
 from itertools import chain
 
 import numpy as np
+from collections import defaultdict
+from typing import List, Set, Tuple, Dict
+import math
 
 from lxg.models import DNFClassifier
 from .gely import ItemsetNode
@@ -67,30 +70,33 @@ def greedy_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[in
     remaining_universe = universe_to_cover.copy()
     selected_cover_set = []
 
-
     # --- dedup identical support sets ----------------------------------------
     support_groups: dict[frozenset[int], list[tuple[int, ItemsetNode]]] = {}
     for idx, (support, node) in enumerate(candidate_rules):
         support_groups.setdefault(frozenset(support), []).append((idx, node))
 
-    for grp_idx, grp in enumerate(support_groups.values()):
-        print(f"# {grp_idx}")
-        for index, node in grp:
-            print(f"idx={index}\tacc={node.accuracy:.3f}\tcomplet={node.completeness_factor:.2f}\tcomplex={node.complexity_factor:.2f}")
+    # for grp_idx, grp in enumerate(support_groups.values()):
+    #     print(f"# {grp_idx}")
+    #     for index, node in grp:
+    #         print(f"idx={index}\tacc={node.accuracy:.3f}\tcomplet={node.completeness_factor:.2f}\tcomplex={node.complexity_factor:.2f}")
 
-        print()
+    # TODO: move this to a new composition strategy
+    # reduce candidate rules to best rules (highest complexity factor) for groups that share the same support set
+    dedup_rules = []
+    for key, grp in support_groups.items():
+        best_node = max(grp, key=lambda x: x[1].complexity_factor)[1]
+        dedup_rules.append((set(key), best_node))
 
-    dedup_rules = [(set(key), grp[0][1])         # keep first node per group
-                   for key, grp in support_groups.items()]
+    # candidate_rules = dedup_rules
     # -------------------------------------------------------------------------
 
     cols = np.array(sorted(remaining_universe))
     support_matrix = np.vstack([
-        np.isin(cols, list(support_set))          # ← convert here
+        np.isin(cols, list(support_set))
         for support_set, _ in candidate_rules
     ])
 
-    coverage_counts = support_matrix.sum(axis=0)             # how many rules cover each sample
+    coverage_counts = support_matrix.sum(axis=0)
     order = np.argsort(coverage_counts)
 
     while len(remaining_universe) > 0:
@@ -101,6 +107,58 @@ def greedy_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[in
         selected_cover_set.append(_best_rule[1])
     return selected_cover_set
 
+def deduplicate_rules(
+    candidate_rules: List[Tuple[Set[int], "ItemsetNode"]]
+) -> List[Tuple[Set[int], "ItemsetNode"]]:
+    """ merge rules with same support set to rule with the highest complexity factor """
+    grouped_by_support: Dict[frozenset[int], List["ItemsetNode"]] = defaultdict(list)
+    for support_set, node in candidate_rules:
+        grouped_by_support[frozenset(support_set)].append(node)
+
+    deduplicated: List[Tuple[Set[int], "ItemsetNode"]] = []
+    for support_frozenset, nodes in grouped_by_support.items():
+        best_node = max(nodes, key=lambda n: n.complexity_factor)
+        deduplicated.append((set(support_frozenset), best_node))
+    return deduplicated
+
+def weighted_greedy_cover(
+        universe: set[int],
+        rules: list[tuple[set[int], ItemsetNode]]
+) -> list[ItemsetNode]:
+    remaining_samples = set(universe)
+    chosen_nodes: list["ItemsetNode"] = []
+    rules = deduplicate_rules(rules)
+
+    while remaining_samples:
+        coverage_count = {s: 0 for s in remaining_samples}
+        for support_set, node in rules:
+            if node is None:
+                continue
+            for s in support_set & remaining_samples:
+                coverage_count[s] += 1
+
+        weights = {s: 1.0 / coverage_count[s] for s in remaining_samples}
+
+        best_index, best_score = None, float("-inf")
+        for idx, (support_set, node) in enumerate(rules):
+            if node is None:
+                continue
+            newly_covered = support_set & remaining_samples
+            if not newly_covered:
+                continue
+            score = sum(weights[s] for s in newly_covered)
+            if score > best_score:
+                best_index, best_score = idx, score
+
+        if best_index is None:
+            break
+
+        support_set, node = rules[best_index]
+        remaining_samples -= support_set
+        chosen_nodes.append(node)
+        rules[best_index] = (set(), None)
+
+    return chosen_nodes
 
 def greedy_score_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[int], ItemsetNode]], _lam=0.5, _lam2=0.5, _lam3=0):
     remaining_universe = universe_to_cover.copy()
