@@ -66,6 +66,33 @@ def greedy_cover_compl(X: set[int], F: list[tuple[set[int], ItemsetNode]]):
 def greedy_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[int], ItemsetNode]]):
     remaining_universe = universe_to_cover.copy()
     selected_cover_set = []
+
+
+    # --- dedup identical support sets ----------------------------------------
+    support_groups: dict[frozenset[int], list[tuple[int, ItemsetNode]]] = {}
+    for idx, (support, node) in enumerate(candidate_rules):
+        support_groups.setdefault(frozenset(support), []).append((idx, node))
+
+    for grp_idx, grp in enumerate(support_groups.values()):
+        print(f"# {grp_idx}")
+        for index, node in grp:
+            print(f"idx={index}\tacc={node.accuracy:.3f}\tcomplet={node.completeness_factor:.2f}\tcomplex={node.complexity_factor:.2f}")
+
+        print()
+
+    dedup_rules = [(set(key), grp[0][1])         # keep first node per group
+                   for key, grp in support_groups.items()]
+    # -------------------------------------------------------------------------
+
+    cols = np.array(sorted(remaining_universe))
+    support_matrix = np.vstack([
+        np.isin(cols, list(support_set))          # ← convert here
+        for support_set, _ in candidate_rules
+    ])
+
+    coverage_counts = support_matrix.sum(axis=0)             # how many rules cover each sample
+    order = np.argsort(coverage_counts)
+
     while len(remaining_universe) > 0:
         # pick next rule by most samples of remaining covered
         _best_rule = sorted(candidate_rules, key=lambda rule: - len(remaining_universe.intersection(rule[0])))[0]
