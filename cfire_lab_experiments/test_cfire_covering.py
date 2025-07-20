@@ -1,5 +1,6 @@
 import logging
-from itertools import chain
+from functools import partial
+from itertools import chain, product
 from pathlib import Path
 from typing import Callable
 
@@ -11,12 +12,13 @@ import lxg.datasets as datasets
 from cfire.cfire_module import CFIRE
 from cfire.gely import ItemsetNode
 from cfire.nodeselection import weighted_greedy_cover
+from cfire.nodeselection import greedy_set_packing_cover
 from cfire.util import __preprocess_explanations_ext
 from cfire_lab_experiments.util import loader_to_tensor
 from lxg.datasets import RandomSeed
 from lxg.models import make_ff, DNFClassifier
 from lxg.util import restore_checkpoint
-from .test_cfire import ks_fn_cached, pprint_dnf_rules
+from test_cfire import ks_fn_cached, pprint_dnf_rules
 
 PRUNE_WINS_THRESHOLDS = list(range(0, 25 + 1))
 # MODEL_CKPT is unused for now
@@ -112,11 +114,14 @@ def main():
     explanation_paths = sorted(glob("./models/explanations_*.pt"))
 
     results = []
+    ALPHAS = [0.0, 0.25, 0.35, 0.5, 0.65, 0.85, 1.0]
+    SEEDS = [42, 43, 44, 45, 46]
+    DEDUP_OPTS = [False, True]
 
     for model_idx, model_path in enumerate(model_paths):
-        for seed in [42, 43, 44, 45, 46]:
+        for seed in SEEDS:
             model = build_model(n_dim, n_classes, Path(model_path))
-            logging.info(f"FIT CFIRE SEED={seed}")
+            logging.info(f"FIT CFIRE model_idx={model_idx} SEED={seed}")
             cfire = fit_cfire(model, X_val, Path(explanation_paths[model_idx]), seed)
 
             eval_default = evaluate_cfire(cfire, model, X_val, X_test)
@@ -126,9 +131,60 @@ def main():
             eval_wgc = evaluate_cfire(cfire, model, X_val, X_test)
             results.append({"model_idx": model_idx, "seed": seed, "composition": "weighted_greedy_cover", **eval_wgc})
 
+            for alpha, dedup in product(ALPHAS, DEDUP_OPTS):
+                sp_cover = partial(
+                    greedy_set_packing_cover,
+                    alpha=alpha,
+                    with_duplicate_removal=dedup
+                )
+
+                cfire.dnf = recalculate_rule_composition(cfire, sp_cover)
+                metrics   = evaluate_cfire(cfire, model, X_val, X_test)
+
+                results.append({
+                    "model_idx":   model_idx,
+                    "seed":        seed,
+                    "composition": "set_packing",
+                    "alpha":       alpha,
+                    "dedup":       dedup,
+                    **metrics
+                })
+
 
     df = pd.DataFrame(results)
     df.to_csv("cfire_eval_results.csv", index=False)
+
+    sp = df[df["composition"] == "set_packing"]
+
+    accuracy_table = (sp
+               .pivot_table(index="alpha",
+                            columns="dedup",
+                            values="val_acc",
+                            aggfunc="mean")
+               .sort_index())
+
+    accuracy_table.columns = [f"val_acc_dedup={d}" for d in accuracy_table.columns]
+
+    print("\n=== Mean validation accuracy (set-packing only) ===")
+    print(accuracy_table.to_string(float_format="{:.4f}".format))
+
+    best_alpha_acc = accuracy_table.mean(axis=1).idxmax()
+    print(f"\nα with highest mean validation accuracy: {best_alpha_acc:.2f}")
+
+    rule_size_table = (sp
+                .pivot_table(index="alpha",
+                             columns="dedup",
+                             values="rule_size",
+                             aggfunc="mean")
+                .sort_index())
+
+    rule_size_table.columns = [f"rule_size_dedup={d}" for d in rule_size_table.columns]
+
+    print("\n=== Mean rule-set size (set-packing only) ===")
+    print(rule_size_table.to_string(float_format="{:.2f}".format))
+
+    best_alpha_size = rule_size_table.mean(axis=1).idxmin()
+    print(f"\nα with smallest mean rule-set size: {best_alpha_size:.2f}")
 
 if __name__ == "__main__":
     main()

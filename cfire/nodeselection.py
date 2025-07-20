@@ -1,3 +1,4 @@
+import logging
 from itertools import chain
 
 import numpy as np
@@ -250,6 +251,78 @@ def comp_variants_dnfs(_supp, _node_set):
 
 ## after submission implementations of new variants
 
+
+def greedy_set_packing_cover(
+        universe: Set[int],
+        rules: List[Tuple[Set[int], "ItemsetNode"]],
+        alpha: float = 1.0,
+        with_duplicate_removal: bool = False,
+) -> List["ItemsetNode"]:
+    """
+    Greedy set-packing-flavoured cover.
+    Chooses clauses so that every element in universe is covered
+    while penalising overlap with clauses that have already been chosen.
+
+    params
+
+    universe : set[int]
+        The sample IDs that must be covered.
+
+    rules : list[(set[int], ItemsetNode)]
+        Each pair is (support_set, node).  support_set contains the
+        sample IDs that the rule (node) covers.
+
+    alpha : float, default=1.0
+        Overlap-penalty weight.  alpha == 0 -> ordinary greedy cover.
+
+    Returns
+    chosen_nodes : list[ItemsetNode]
+        Clauses that together cover universe while keeping overlaps small.
+    """
+    rules = rules.copy()
+    remaining = set(universe)
+    chosen_nodes: List["ItemsetNode"] = []
+
+    #remove duplicated, done by tobi
+    if with_duplicate_removal:
+        rules = deduplicate_rules(rules)
+
+    union_chosen: Set[int] = set()
+
+    while remaining:
+        best_idx, best_score = None, float("-inf")
+
+        for idx, (support, node) in enumerate(rules):
+            if node is None:
+                continue
+
+            newly_covered = support & remaining
+            if not newly_covered:
+                continue
+
+            overlap = len(support & union_chosen)
+            score = len(newly_covered) - alpha * overlap
+
+            if score > best_score:
+                best_idx, best_score = idx, score
+
+        if best_idx is None: #shouldnt happen
+            logging.WARN("Warning: No more rules can cover remaining samples.")
+            break
+
+        support, node = rules[best_idx]
+        chosen_nodes.append(node)
+
+
+        remaining.difference_update(support)
+        union_chosen.update(support)
+
+        # disable the rule so it won’t be picked again
+        rules[best_idx] = (set(), None)
+
+    return chosen_nodes
+
+
 # currently complexity factor as cost
 def _comp_ilp_optimal(supp, nodes):
     chosen_nodes = solve_ilp_set_cover(supp, nodes, cost_key=lambda n: n.complexity_factor)
@@ -263,7 +336,7 @@ def solve_ilp_set_cover(support_sets, nodes,
                         time_limit=None):
     """
     Exact 0-1 set cover via MILP.
-    Returns the *list of ItemsetNode* chosen by the solver.
+    Returns the list of ItemsetNode chosen by the solver.
     """
     print("Solving set cover via ILP..., TAKES TIME")
     m = pulp.LpProblem("SetCover", pulp.LpMinimize)
