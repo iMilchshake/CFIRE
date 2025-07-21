@@ -1,19 +1,14 @@
-import logging
-import sys
-from glob import glob
 from itertools import chain
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
-import pandas as pd
 import torch
 from torch import nn
 
 import lxg.datasets as datasets
 from cfire.cfire_module import CFIRE
 from cfire.gely import ItemsetNode
-from cfire.nodeselection import inv_freq_set_cover, greedy_cover, dedup_greedy_cover
 from cfire.util import __preprocess_explanations_ext
 from cfire_lab_experiments.util import loader_to_tensor
 from lxg.datasets import RandomSeed
@@ -65,11 +60,11 @@ def fit_cfire(model, X_val: torch.Tensor, explanation_path: Path, seed: int):
 
 
 def recalculate_rule_composition(
-    cfire: CFIRE,
-    fn_cover: Callable[
-        [set[int], list[tuple[set[int], ItemsetNode]]], list[ItemsetNode]
-    ],
-    update_cfire: bool = True,
+        cfire: CFIRE,
+        fn_cover: Callable[
+            [set[int], list[tuple[set[int], ItemsetNode]]], list[ItemsetNode]
+        ],
+        update_cfire: bool = True,
 ):
     """manually run rule composition, unless disabled will update cfire object"""
     n_classes = len(np.unique(cfire._labels))
@@ -97,7 +92,7 @@ def recalculate_rule_composition(
 
 
 def evaluate_cfire(
-    cfire: CFIRE, model: nn.Module, X_val: torch.Tensor, X_test: torch.Tensor
+        cfire: CFIRE, model: nn.Module, X_val: torch.Tensor, X_test: torch.Tensor
 ) -> dict:
     # evaluate
     y_val = model.predict_batch(X_val).numpy()
@@ -115,49 +110,3 @@ def evaluate_cfire(
     }
 
 
-def main():
-    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
-
-    # build model & CFIRE
-    X_val, X_test, n_dim, n_classes = load_data()
-
-    model_paths = sorted(glob("./models/tmp_*.ckpt"))
-    explanation_paths = sorted(glob("./models/explanations_*.pt"))
-    results = []
-
-    COMPOSITION_CONFIGS = [
-        ("default", greedy_cover),
-        ("default_dedup", dedup_greedy_cover),
-        ("inv_freq_set_cover", inv_freq_set_cover),
-    ]
-    SEEDS = [42, 43, 44, 45, 46]
-
-    for model_idx, model_path in enumerate(model_paths):
-        logging.info(f"MODEL_IDX = {model_idx}")
-        for seed in SEEDS:
-
-            model = build_model(n_dim, n_classes, Path(model_path))
-            logging.info(f"\tFIT CFIRE SEED={seed}")
-            cfire = fit_cfire(model, X_val, Path(explanation_paths[model_idx]), seed)
-
-            for comp_name, comp_fn in COMPOSITION_CONFIGS:
-                logging.info(f"\t\tfinished {comp_name}")
-                _, nodes = recalculate_rule_composition(cfire, comp_fn)
-                node_counts = [len(class_nodes) for class_nodes in nodes]
-                eval_results = evaluate_cfire(cfire, model, X_val, X_test)
-                results.append(
-                    {
-                        "model_idx": model_idx,
-                        "seed": seed,
-                        "composition": comp_name,
-                        "node_counts": node_counts,
-                        **eval_results,
-                    }
-                )
-
-    df = pd.DataFrame(results)
-    df.to_csv("cfire_eval_results.csv", index=False)
-
-
-if __name__ == "__main__":
-    main()
