@@ -183,8 +183,6 @@ class CFIRE:
         # closed frequent itemset mining (self._itemsetnodes)
         self._verbose_print("CFIRE: Itemset Mining and Rule Candidates")
         self._calculate_rule_candidates()
-        print(len(self._itemsetnodes))
-        print(self._itemsetnodes)
         self._verbose_print(f"took {self._compute_times['_calculate_rule_candidates']:.4f}s")
 
         self._verbose_print("CFIRE: Select rules")
