@@ -1,28 +1,25 @@
 import logging
+import sys
+from glob import glob
 from itertools import chain
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
+import pandas as pd
 import torch
 from torch import nn
 
 import lxg.datasets as datasets
 from cfire.cfire_module import CFIRE
 from cfire.gely import ItemsetNode
-from cfire.nodeselection import weighted_greedy_cover
+from cfire.nodeselection import inv_freq_set_cover, greedy_cover, dedup_greedy_cover
 from cfire.util import __preprocess_explanations_ext
 from cfire_lab_experiments.util import loader_to_tensor
 from lxg.datasets import RandomSeed
 from lxg.models import make_ff, DNFClassifier
 from lxg.util import restore_checkpoint
-from .test_cfire import ks_fn_cached, pprint_dnf_rules
-
-PRUNE_WINS_THRESHOLDS = list(range(0, 25 + 1))
-# MODEL_CKPT is unused for now
-MODEL_CKPT = None
-# EXPLANATIONS_PT is unused for now
-EXPLANATIONS_PT = None
+from .test_cfire import ks_fn_cached
 
 
 # helpers / metrics
@@ -31,7 +28,12 @@ def get_rule_size(rules):
 
 
 def get_literal_count(rules):
-    return sum(len(conjunction) for class_rule in rules for clause in class_rule for conjunction in clause)
+    return sum(
+        len(conjunction)
+        for class_rule in rules
+        for clause in class_rule
+        for conjunction in clause
+    )
 
 
 # --- cfire ---
@@ -52,18 +54,27 @@ def build_model(n_dim: int, n_classes: int, model_path: Path) -> nn.Module:
 def fit_cfire(model, X_val: torch.Tensor, explanation_path: Path, seed: int):
     expl_bin: Callable = lambda x: __preprocess_explanations_ext(x, threshold=0.01) > 0
     with RandomSeed(seed):
-        cfire = CFIRE(localexplainer_fn=ks_fn_cached(explanation_path), inference_fn=model.predict_batch_softmax,
-                      expl_binarization_fn=expl_bin, )
+        cfire = CFIRE(
+            localexplainer_fn=ks_fn_cached(explanation_path),
+            inference_fn=model.predict_batch_softmax,
+            expl_binarization_fn=expl_bin,
+        )
+        cfire._verbose = False
         cfire.fit(X_val.numpy(), model.predict_batch(X_val).numpy())
     return cfire
 
 
-def recalculate_rule_composition(cfire: CFIRE,
-                                 fn_cover: Callable[[set[int], list[tuple[set[int], ItemsetNode]]], list[ItemsetNode]]):
-
-    """ manually run rule composition """
+def recalculate_rule_composition(
+    cfire: CFIRE,
+    fn_cover: Callable[
+        [set[int], list[tuple[set[int], ItemsetNode]]], list[ItemsetNode]
+    ],
+    update_cfire: bool = True,
+):
+    """manually run rule composition, unless disabled will update cfire object"""
     n_classes = len(np.unique(cfire._labels))
     rules = []
+    all_selected_nodes: list[list[ItemsetNode]] = []
 
     for class_idx in range(n_classes):
         class_support = cfire.frequent_nodes[class_idx].class_support
@@ -72,16 +83,22 @@ def recalculate_rule_composition(cfire: CFIRE,
         sample_universe = set(chain.from_iterable(class_support))
         selected_nodes = fn_cover(sample_universe, list(zip(class_support, nodes)))
 
+        all_selected_nodes.append(selected_nodes)
         rules.append([rule for node in selected_nodes for rule in node.dnf.rules[0]])
 
     # build final (multi class) dnf and recalculate performance
-    final_dnf = DNFClassifier(rules, 'accuracy')
+    final_dnf = DNFClassifier(rules, "accuracy")
     final_dnf.compute_rule_performance(cfire._data, cfire._labels)
 
-    return final_dnf
+    if update_cfire:
+        cfire.dnf = final_dnf
+
+    return final_dnf, all_selected_nodes
 
 
-def evaluate_cfire(cfire: CFIRE, model: nn.Module, X_val: torch.Tensor, X_test: torch.Tensor) -> dict:
+def evaluate_cfire(
+    cfire: CFIRE, model: nn.Module, X_val: torch.Tensor, X_test: torch.Tensor
+) -> dict:
     # evaluate
     y_val = model.predict_batch(X_val).numpy()
     y_test = model.predict_batch(X_test).numpy()
@@ -94,41 +111,53 @@ def evaluate_cfire(cfire: CFIRE, model: nn.Module, X_val: torch.Tensor, X_test: 
         "val_acc": base_val_acc,
         "test_acc": base_test_acc,
         "rule_size": rule_size,
-        "literal_count": literal_count
+        "literal_count": literal_count,
     }
 
 
-import pandas as pd
-
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
     # build model & CFIRE
     X_val, X_test, n_dim, n_classes = load_data()
 
-    from glob import glob
-
     model_paths = sorted(glob("./models/tmp_*.ckpt"))
     explanation_paths = sorted(glob("./models/explanations_*.pt"))
-
     results = []
 
+    COMPOSITION_CONFIGS = [
+        ("default", greedy_cover),
+        ("default_dedup", dedup_greedy_cover),
+        ("inv_freq_set_cover", inv_freq_set_cover),
+    ]
+    SEEDS = [42, 43, 44, 45, 46]
+
     for model_idx, model_path in enumerate(model_paths):
-        for seed in [42, 43, 44, 45, 46]:
+        logging.info(f"MODEL_IDX = {model_idx}")
+        for seed in SEEDS:
+
             model = build_model(n_dim, n_classes, Path(model_path))
-            logging.info(f"FIT CFIRE SEED={seed}")
+            logging.info(f"\tFIT CFIRE SEED={seed}")
             cfire = fit_cfire(model, X_val, Path(explanation_paths[model_idx]), seed)
 
-            eval_default = evaluate_cfire(cfire, model, X_val, X_test)
-            results.append({"model_idx": model_idx, "seed": seed, "composition": "greedy_cover", **eval_default})
-
-            cfire.dnf = recalculate_rule_composition(cfire, weighted_greedy_cover)
-            eval_wgc = evaluate_cfire(cfire, model, X_val, X_test)
-            results.append({"model_idx": model_idx, "seed": seed, "composition": "weighted_greedy_cover", **eval_wgc})
-
+            for comp_name, comp_fn in COMPOSITION_CONFIGS:
+                logging.info(f"\t\tfinished {comp_name}")
+                _, nodes = recalculate_rule_composition(cfire, comp_fn)
+                node_counts = [len(class_nodes) for class_nodes in nodes]
+                eval_results = evaluate_cfire(cfire, model, X_val, X_test)
+                results.append(
+                    {
+                        "model_idx": model_idx,
+                        "seed": seed,
+                        "composition": comp_name,
+                        "node_counts": node_counts,
+                        **eval_results,
+                    }
+                )
 
     df = pd.DataFrame(results)
     df.to_csv("cfire_eval_results.csv", index=False)
+
 
 if __name__ == "__main__":
     main()
