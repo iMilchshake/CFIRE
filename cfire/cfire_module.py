@@ -117,7 +117,6 @@ class CFIRE:
         self._compute_times['_calculate_rule_candidates'] = time.time() - _start_time
         return
 
-
     def _compose_rule_model(self):
         _start_time = time.time()
         n_classes = len(np.unique(self._labels))
@@ -159,8 +158,8 @@ class CFIRE:
         return
 
     def __merge_single_class_dnfs_multiclass_dnf(self, dnfs):
-            rules = [dnf.rules[0] for dnf in dnfs]  # 1 or 0? # TODO: we ignore single class dnf tie breaker, do we need it at any point?
-            return DNFClassifier(rules, 'accuracy')
+        rules = [dnf.rules[0] for dnf in dnfs]  # 1 or 0? # TODO: we ignore single class dnf tie breaker, do we need it at any point?
+        return DNFClassifier(rules, 'accuracy')
 
     def _verbose_print(self, message):
         """print wrapper, that only prints if verbose flag is set """

@@ -98,44 +98,50 @@ def dedup_greedy_cover(universe_to_cover: set[int], candidate_rules: list[tuple[
     candidate_rules = deduplicate_rules(candidate_rules)
     return greedy_cover(universe_to_cover, candidate_rules)
 
-def inv_freq_set_cover(
-        universe: set[int],
-        rules: list[tuple[set[int], ItemsetNode]]
-) -> list[ItemsetNode]:
-    remaining_samples = set(universe)
-    chosen_nodes: list["ItemsetNode"] = []
-    rules = deduplicate_rules(rules)
 
-    while remaining_samples:
-        coverage_count = {s: 0 for s in remaining_samples}
-        for support_set, node in rules:
-            if node is None:
-                continue
-            for s in support_set & remaining_samples:
-                coverage_count[s] += 1
+def get_inv_freq_set_cover(alpha: float):
+    """ generate inverse frequency covering function. Alpha value determines priority of less covered samples"""
 
-        weights = {s: 1.0 / coverage_count[s] for s in remaining_samples}
+    def inv_freq_set_cover(
+            universe: set[int],
+            rules: list[tuple[set[int], ItemsetNode]]
+    ) -> list[ItemsetNode]:
+        remaining_samples = set(universe)
+        chosen_nodes: list["ItemsetNode"] = []
+        rules = deduplicate_rules(rules)
 
-        best_index, best_score = None, float("-inf")
-        for idx, (support_set, node) in enumerate(rules):
-            if node is None:
-                continue
-            newly_covered = support_set & remaining_samples
-            if not newly_covered:
-                continue
-            score = sum(weights[s] for s in newly_covered)
-            if score > best_score:
-                best_index, best_score = idx, score
+        while remaining_samples:
+            coverage_count = {s: 0 for s in remaining_samples}
+            for support_set, node in rules:
+                if node is None:
+                    continue
+                for s in support_set & remaining_samples:
+                    coverage_count[s] += 1
 
-        if best_index is None:
-            break
+            weights = {s: 1.0 / coverage_count[s] ** alpha for s in remaining_samples}
 
-        support_set, node = rules[best_index]
-        remaining_samples -= support_set
-        chosen_nodes.append(node)
-        rules[best_index] = (set(), None)
+            best_index, best_score = None, float("-inf")
+            for idx, (support_set, node) in enumerate(rules):
+                if node is None:
+                    continue
+                newly_covered = support_set & remaining_samples
+                if not newly_covered:
+                    continue
+                score = sum(weights[s] for s in newly_covered)
+                if score > best_score:
+                    best_index, best_score = idx, score
 
-    return chosen_nodes
+            if best_index is None:
+                break
+
+            support_set, node = rules[best_index]
+            remaining_samples -= support_set
+            chosen_nodes.append(node)
+            rules[best_index] = (set(), None)
+
+        return chosen_nodes
+
+    return inv_freq_set_cover
 
 def greedy_score_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[int], ItemsetNode]], _lam=0.5, _lam2=0.5, _lam3=0):
     remaining_universe = universe_to_cover.copy()

@@ -73,10 +73,10 @@ def recalculate_rule_composition(
 
     for class_idx in range(n_classes):
         class_support = cfire.frequent_nodes[class_idx].class_support
-        nodes = cfire.frequent_nodes[class_idx].nodes
+        class_nodes = cfire.frequent_nodes[class_idx].nodes
 
         sample_universe = set(chain.from_iterable(class_support))
-        selected_nodes = fn_cover(sample_universe, list(zip(class_support, nodes)))
+        selected_nodes = fn_cover(sample_universe, list(zip(class_support, class_nodes)))
 
         all_selected_nodes.append(selected_nodes)
         rules.append([rule for node in selected_nodes for rule in node.dnf.rules[0]])

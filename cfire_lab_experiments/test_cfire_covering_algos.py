@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from cfire.nodeselection import inv_freq_set_cover, greedy_cover, dedup_greedy_cover
+from cfire.nodeselection import (
+    greedy_cover,
+    dedup_greedy_cover,
+    get_inv_freq_set_cover,
+)
 from cfire_lab_experiments.test_cfire_utils import load_data, build_model, evaluate_cfire, recalculate_rule_composition, \
     fit_cfire
 
@@ -16,16 +20,18 @@ def main():
     # build model & CFIRE
     X_val, X_test, n_dim, n_classes = load_data()
 
-    model_paths = sorted(glob("./models/tmp_*.ckpt"))
-    explanation_paths = sorted(glob("./models/explanations_*.pt"))
+    model_paths = sorted(glob("./cfire_lab_experiments/models/tmp_*.ckpt"))
+    explanation_paths = sorted(glob("./cfire_lab_experiments/models/explanations_*.pt"))
     results = []
 
     COMPOSITION_CONFIGS = [
         ("default", greedy_cover),
         ("default_dedup", dedup_greedy_cover),
-        ("inv_freq_set_cover", inv_freq_set_cover),
+        ("inv_freq_set_cover_a=1", get_inv_freq_set_cover(1)),
+        ("inv_freq_set_cover_a=0.5", get_inv_freq_set_cover(0.5)),
+        ("inv_freq_set_cover_a=1.5", get_inv_freq_set_cover(1.5)),
     ]
-    SEEDS = [42, 43, 44, 45, 46]
+    SEEDS = [42, 43, 44]
 
     for model_idx, model_path in enumerate(model_paths):
         logging.info(f"MODEL_IDX = {model_idx}")
@@ -49,6 +55,12 @@ def main():
                         **eval_results,
                     }
                 )
+
+            # get best config for this model/seed configuration
+            model_seed_results = [r for r in results if r["model_idx"] == model_idx and r["seed"] == seed]
+            best_result = max(model_seed_results, key=lambda r: r["val_acc"])
+            best_result_named = {**best_result, "composition": "best_val_acc"}
+            results.append(best_result_named)
 
     df = pd.DataFrame(results)
     df.to_csv("cfire_eval_results.csv", index=False)
