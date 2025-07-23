@@ -473,14 +473,14 @@ class ItemsetNode():
                 _Y_app_pos = np.argwhere(_Y_app == c).reshape(-1)  # true positives
                 _Y_new = np.zeros(len(rule_applicable))
                 _Y_new[_Y_app_pos] = 1  # new c vs. rest labels
-                _X_app = X[rule_applicable]  # select applicable data points
+                _X_applicable = X[rule_applicable]  # select applicable data points
                 # select dims covered by conjunction
                 d = get_dims_conjunction(conjunction)
-                _X_app = _X_app[:, d]
+                _X_applicable = _X_applicable[:, d]
 
-                assert len(_X_app) == len(_Y_new)
+                assert len(_X_applicable) == len(_Y_new)
 
-                if dt_kwargs is not None and 'mex_depth' in dt_kwargs.keys():
+                if dt_kwargs is not None and 'max_depth' in dt_kwargs.keys():
                     _max_depth = dt_kwargs['max_depth']
                 else:
                     # _max_depth = min([max(self.complexity_limit - len(self.itemset), 2), self.complexity_limit])
@@ -493,38 +493,38 @@ class ItemsetNode():
                     _new_dnfs[-1].append(conjunction); continue
 
 
-                def _fit_tree(pg, cv, X, Y):
+                def _fit_tree(parameter_grid, cross_validation, X, Y):
 
-                    grid_search = GridSearchCV(DT(), pg, cv=int(cv), scoring='accuracy')
+                    grid_search = GridSearchCV(DT(), parameter_grid, cv=int(cross_validation), scoring='accuracy')
                     # Fit the GridSearchCV object to the data
                     grid_search.fit(X, Y)
                     dt = grid_search.best_estimator_
                     return dt
 
-                _cv = 5
+                _cross_Validation = 5
                 if __n_ones < 5 or __n_zeros < 5:  # too few samples per class
-                    _cv = min(__n_ones, __n_zeros)-1
-                    if _cv < 2:
-                        _cv = 2
+                    _cross_Validation = min(__n_ones, __n_zeros)-1
+                    if _cross_Validation < 2:
+                        _cross_Validation = 2
                     _max_depth = min(_max_depth, 3)
-                if len(_X_app) <= 10:  # too few samples to really bother
-                    _cv = min(_cv, 2)
+                if len(_X_applicable) <= 10:  # too few samples to really bother
+                    _cross_Validation = min(_cross_Validation, 2)
                     _max_depth = 2
                 param_grid = {'max_depth': range(1, _max_depth)}
                                   # 'class_weight': [{0: 1, 1:2}]}
                 if dt_kwargs is not None and 'class_weight' in dt_kwargs.keys():
                     param_grid['class_weight'] = dt_kwargs['class_weight']
-                dt = _fit_tree(param_grid, _cv, _X_app, _Y_new)
+                dt = _fit_tree(param_grid, _cross_Validation, _X_applicable, _Y_new)
                 _r = DNFClassifier.from_DT(dt)
                 if len(_r.rules[1]) == 0:  # no rules were found for target class
                     param_grid.update({'class_weight': ['balanced']})
-                    dt = _fit_tree(param_grid, _cv, _X_app, _Y_new)
+                    dt = _fit_tree(param_grid, _cross_Validation, _X_applicable, _Y_new)
                     _r = DNFClassifier.from_DT(dt)
-                acc_dt = dt.score(_X_app, _Y_app)
+                acc_dt = dt.score(_X_applicable, _Y_app)
                 self.dt = dt
                 self._dts.append(dt)
 
-                acc_dnf = np.mean(_r(_X_app) == _Y_app)
+                acc_dnf = np.mean(_r(_X_applicable) == _Y_app)
                 if not acc_dnf == acc_dt:
                     print("dnf deviates from tree")
                 if not np.isclose(acc_dnf, acc_dt):
