@@ -5,25 +5,26 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple, Optional, Callable
+from typing import Optional, Callable
 
 import numpy as np
 import torch
 from joblib import Parallel, delayed
 from joblib.parallel import default_parallel_config
-from torch.utils.data import DataLoader
+from torch import Tensor
 
 from cfire.cfire_module import CFIRE
 from cfire.util import __preprocess_explanations_ext
 from cfire_lab_experiments.util import loader_to_tensor
 from cfire_lab_experiments.utils_cfire import load_model
+from final_experiments.models import load_or_train_models, ModelFiles
+from final_experiments.types import CFIREDataset
 from lxg.datasets import dataset_callables, RandomSeed
-from .utils_model import init_model_and_explanations
 
 
 @dataclass
 class CFIREExperiment:
-    """stores configuration for *one* experiment (= one configuration of cfire parameters)"""
+    """stores configuration for one experiment evaluating one set of cfire parameters for multiple models and seeds"""
 
     dataset: str
     n_models: int
@@ -33,14 +34,6 @@ class CFIREExperiment:
     bin_threshold: float
     # bin_top_k: int
     max_dt_depth: int
-
-
-class CFIREDataset(NamedTuple):
-    train_loader: DataLoader
-    test_loader: DataLoader
-    val_loader: DataLoader
-    n_dim: int
-    n_classes: int
 
 
 @dataclass
@@ -60,8 +53,8 @@ def initialize_experiment(experiment: CFIREExperiment):
 
     dataset = CFIREDataset._make(dataset_fn())  # convert tuple to named tuple
 
-    paths = init_model_and_explanations(dataset, experiment.n_models, model_dir)
-    return paths, dataset
+    models = load_or_train_models(dataset, experiment.n_models, model_dir)
+    return models, dataset
 
 
 def init_cfire(
@@ -76,12 +69,7 @@ def init_cfire(
     if sum(arg is not None for arg in (bin_threshold, bin_top_k)) != 1:
         raise ValueError("Specify either bin_threshold OR bin_top_k")
 
-    expl_bin: Callable = (
-        lambda x: __preprocess_explanations_ext(
-            x, threshold=bin_threshold, top_k=bin_top_k
-        )
-        > 0
-    )
+    expl_bin: Callable = (lambda x: __preprocess_explanations_ext(x, threshold=bin_threshold, top_k=bin_top_k) > 0)
 
     cfire = CFIRE(
         localexplainer_fn=None,
@@ -95,24 +83,25 @@ def init_cfire(
     return cfire
 
 
-def init_tasks(
-    paths, dataset: CFIREDataset, experiment: CFIREExperiment
+def init_cfire_tasks(
+    models: list[ModelFiles], dataset: CFIREDataset, experiment: CFIREExperiment
 ) -> list[CFIRETask]:
     tasks = []
-    for model_path, expl_path in paths:
+    for model_files in models:
 
-        # precalculate model inputs / predictions
-        model = load_model(dataset.n_dim, dataset.n_classes, model_path)
-        X_val_t, _ = loader_to_tensor(dataset.val_loader)
-        y_val_model_pred_t = model.predict_batch(X_val_t)
+        # precalculate model inputs / predictions / explanations
+        model = load_model(dataset.n_dim, dataset.n_classes, model_files.model_path)
+        X_val, _ = loader_to_tensor(dataset.val_loader)
+        y_val_model_pred: Tensor = model.predict_batch(X_val)
 
-        X_val_np = X_val_t.detach().cpu().numpy()
-        y_val_model_pred_np = y_val_model_pred_t.detach().cpu().numpy()
+        # convert to read only numpy arrays
+        X_val_np = X_val.detach().cpu().numpy()
+        y_val_model_pred_np = y_val_model_pred.detach().cpu().numpy()
         X_val_np.setflags(write=False)
         y_val_model_pred_np.setflags(write=False)
 
         # load explanations
-        explanations_np = torch.load(expl_path).detach().cpu().numpy()
+        explanations_np = torch.load(model_files.expl_path).detach().cpu().numpy()
         explanations_np.setflags(write=False)
 
         for seed in range(experiment.n_seeds):
@@ -129,11 +118,7 @@ def init_tasks(
     return tasks
 
 
-def _run_task(task: CFIRETask):
-    print(
-        f"types: X={type(task.X_val_np)}, Y={type(task.y_val_model_pred_np)}, "
-        f"E={type(task.explanations_np)}"
-    )
+def run_cfire_task(task: CFIRETask):
     with RandomSeed(task.cfire_seed):
         cfire = init_cfire(
             explanations=task.explanations_np,
@@ -144,35 +129,34 @@ def _run_task(task: CFIRETask):
         )
     cfire.fit(task.X_val_np, task.y_val_model_pred_np)
 
-
 def main():
     logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
     # define experiment
     experiment = CFIREExperiment(
         dataset="abalone",
-        n_models=1,
-        n_seeds=15,
+        n_models=3,
+        n_seeds=12,
         freq_threshold=0.01,
         bin_threshold=0.01,
         max_dt_depth=7,
     )
 
-    paths, dataset = initialize_experiment(experiment)
-    tasks = init_tasks(paths, dataset, experiment)
+    models, dataset = initialize_experiment(experiment)
+    logging.info(f"initialized experiment")
 
-    for n_workers in [5, 5, 5]:
-        logging.info(f"starting n_workers={n_workers}")
-        t0 = time.time()
-        print(default_parallel_config)
-        Parallel(
-            n_jobs=n_workers,
-            prefer="processes",
-            verbose=50,
-        )(delayed(_run_task)(t) for t in tasks)
-        elapsed = time.time() - t0
-        logging.info(f"n_workers={n_workers} -> t={elapsed}")
+    tasks = init_cfire_tasks(models, dataset, experiment)
+    logging.info(f"initialized {len(tasks)} cfire tasks")
 
+    # run tasks concurrently
+    n_workers = 6
+    logging.info(f"starting processing with n_workers={n_workers}")
+    Parallel(
+        n_jobs=n_workers,
+        prefer="processes",
+        verbose=50,
+    )(delayed(run_cfire_task)(t) for t in tasks)
+    logging.info("DONE")
 
 if __name__ == "__main__":
     main()
