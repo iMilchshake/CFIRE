@@ -40,7 +40,7 @@ def load_data():
     return X_val, X_test, n_dim, n_classes
 
 
-def build_model(n_dim: int, n_classes: int, model_path: Path) -> nn.Module:
+def load_model(n_dim: int, n_classes: int, model_path: Path) -> nn.Module:
     model = make_ff([n_dim, 128, 128, n_classes], torch.nn.ReLU).to("cpu")
     restore_checkpoint(model_path, model, train=False)
     return model
@@ -108,5 +108,3 @@ def evaluate_cfire(
         "rule_size": rule_size,
         "literal_count": literal_count,
     }
-
-

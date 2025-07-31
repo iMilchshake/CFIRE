@@ -1,5 +1,8 @@
+import logging
+from argparse import ArgumentError
 from copy import deepcopy
 
+import numpy
 import numpy as np
 import torch
 
@@ -10,7 +13,8 @@ from lxg.models import DNFClassifier
 from cfire.gely import gely_discriminatory, ItemsetNode
 from cfire.nodeselection import _comp_greedy_cover
 
-from typing import NamedTuple
+from typing import NamedTuple, Optional
+
 
 class ItemsetNodeCollection(NamedTuple):
     """ holds a list of `ItemsetNodes` and their corresponding support set """
@@ -20,8 +24,8 @@ class ItemsetNodeCollection(NamedTuple):
 
 class CFIRE:
 
-    def __init__(self, localexplainer_fn, inference_fn, expl_binarization_fn=None,
-                 frequency_threshold=0.01, composition_strategy=_comp_greedy_cover,max_dt_depth=7, meta_data=None):
+    def __init__(self, localexplainer_fn, explanations: Optional[numpy.ndarray], inference_fn, expl_binarization_fn=None,
+                 frequency_threshold=0.01, composition_strategy=_comp_greedy_cover, max_dt_depth=7, meta_data=None):
         # MISSING:
         # - behavior of grid search during rule fitting (min/max_depth),
         # - inference strategy for DNF
@@ -39,6 +43,15 @@ class CFIRE:
         # feature importance ("explanations") for the given input samples -> (n_samples, n_features)
         self._explanations = None
         self._binarized_explanations = None
+
+        # optionally use pre-calculated local explanations instead of callable function
+        if explanations is not None:
+            self._explanations = explanations
+
+            if localexplainer_fn is not None:
+                logging.warning("localexplainer_fn passed although pre-calculated explanations are used")
+            if localexplainer_fn is not None:
+                logging.warning("inference_fn passed although pre-calculated explanations are used")
 
         # a list containing the results, with index corresponding to one class each
         # for each class a tuple with 2 elements is stored
@@ -72,12 +85,13 @@ class CFIRE:
 
     def _calc_explanations(self):
         time_expl = time.time()
-        self._explanations = self._localexplainer_fn(self._inference_fn, self._data, self._labels)
 
-        # TODO: Not quite sure where to put this, but in case local explainer returns a tensor
-        # cast it to numpy before further processing, as it can crash future functions otherwise
-        if isinstance(self._explanations, torch.Tensor):
-            self._explanations = self._explanations.cpu().numpy() 
+        if self._explanations is None:
+            self._explanations = self._localexplainer_fn(self._inference_fn, self._data, self._labels)
+
+            # cast it to numpy before further processing, as it can crash future functions otherwise
+            if isinstance(self._explanations, torch.Tensor):
+                self._explanations = self._explanations.cpu().numpy()
 
         self._compute_times['_calc_explanations'] = time.time() - time_expl
 
@@ -191,4 +205,3 @@ class CFIRE:
 
     def eval(self):
         pass
-

@@ -12,7 +12,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 
 from cfire.cfire_module import ItemsetNodeCollection
 from cfire.nodeselection import deduplicate_rules
-from cfire_lab_experiments.test_cfire_utils import load_data, build_model, fit_cfire
+from cfire_lab_experiments.utils_cfire import load_data, load_model, fit_cfire
 
 
 def build_coverage_matrices(
@@ -146,8 +146,8 @@ def main():
     # build model & CFIRE
     X_val, X_test, n_dim, n_classes = load_data()
 
-    model_paths = sorted(glob("./models/tmp_*.ckpt"))
-    explanation_paths = sorted(glob("./models/explanations_*.pt"))
+    model_paths = sorted(glob("./cfire_lab_experiments/models/tmp_*.ckpt"))
+    explanation_paths = sorted(glob("./cfire_lab_experiments/models/explanations_*.pt"))
     results = []
 
     SEEDS = [42, 43]
@@ -155,7 +155,7 @@ def main():
     for model_idx, model_path in enumerate(model_paths):
         logging.info(f"MODEL_IDX = {model_idx}")
         for seed in SEEDS:
-            model = build_model(n_dim, n_classes, Path(model_path))
+            model = load_model(n_dim, n_classes, Path(model_path))
             logging.info(f"\tFIT CFIRE SEED={seed}")
             cfire = fit_cfire(model, X_val, Path(explanation_paths[model_idx]), seed)
 

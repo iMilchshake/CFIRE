@@ -1,15 +1,16 @@
+import logging
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.utils.class_weight import compute_class_weight
 
-import lxg.datasets as datasets
 from cfire_lab_experiments.util import loader_to_tensor
 from lxg.attribution import kernelshap
-from lxg.datasets import RandomSeed
+from lxg.datasets import RandomSeed, dataset_callables
 from lxg.models import make_ff
 from lxg.util import create_checkpoint
 
@@ -22,13 +23,14 @@ EPS = 1e-7
 
 
 def init_model_and_explanations(
-    dataset_fn,
+    dataset: tuple,
     n_models: int,
     save_dir: Path,
-    seed: int=42,
+    seed: int = 42,
 ):
     # load dataset
-    train_loader, test_loader, val_loader, n_dim, n_classes = dataset_fn()
+
+    train_loader, test_loader, val_loader, n_dim, n_classes = dataset
     X_train, y_train = loader_to_tensor(train_loader)
     X_val, y_val = loader_to_tensor(val_loader)
     X_test, y_test = loader_to_tensor(test_loader)
@@ -41,7 +43,9 @@ def init_model_and_explanations(
     )
     class_weights = torch.tensor(cls_weights_np, dtype=torch.float32)
 
-    for i in range(n_models):
+    model_stats = []
+    paths: list[tuple[Path, Path]] = []
+    for model_idx in range(n_models):
         for retry in range(1, MAX_RETRIES + 1):
 
             # TODO: other model dims?
@@ -61,12 +65,14 @@ def init_model_and_explanations(
 
             y_val_pred = model.predict_batch(X_val)
             if len(torch.unique(y_val_pred)) == n_classes:
-                print(f"model {i} converged after {retry} attempt(s)")
+                logging.info(
+                    f"model {model_idx} train success after {retry} attempt(s)"
+                )
                 break
-            print(f"model {i} retry {retry}: missing classes, re‑training…")
+            print(f"model {model_idx} retry {retry}: missing classes, re‑training…")
         else:
             raise RuntimeError(
-                f"model {i} failed to predict all {n_classes} classes after {MAX_RETRIES} retries"
+                f"model {model_idx} failed to predict all {n_classes} classes after {MAX_RETRIES} retries"
             )
 
         # final evaluation
@@ -75,12 +81,20 @@ def init_model_and_explanations(
         train_acc = float(np.mean(y_train_pred.numpy() == y_train.numpy()))
         val_acc = float(np.mean(y_val_pred.numpy() == y_val.numpy()))
         test_acc = float(np.mean(y_test_pred.numpy() == y_test.numpy()))
-        print(f"model {i} train accuracy: {train_acc}")
-        print(f"model {i} val accuracy:   {val_acc}")
-        print(f"model {i} test accuracy:  {test_acc}")
-        # TODO: instead of prints, we want this kind of info in some csv/json i think
 
-        create_checkpoint(save_dir / f"tmp_{i}.ckpt", model)
+        model_stats.append(
+            {
+                "model_idx": model_idx,
+                "train_acc": train_acc,
+                "val_acc": val_acc,
+                "test_acc": test_acc,
+            }
+        )
+
+        model_path = save_dir / f"{model_idx}_model.ckpt"
+        explanations_path = save_dir / f"{model_idx}_expl.pt"
+        paths.append((model_path, explanations_path))
+        create_checkpoint(model_path, model)
 
         # explanations
         with RandomSeed(seed):
@@ -93,10 +107,12 @@ def init_model_and_explanations(
                 n_samples=300,
                 masks=kernelshap_mask,
             )
-            torch.save(explanations, save_dir / f"explanations_{i}.pt")
-            assert torch.equal(
-                explanations, torch.load(save_dir / f"explanations_{i}.pt")
-            )
+            torch.save(explanations, explanations_path)
+
+    # store model stats
+    pd.DataFrame(model_stats).to_csv(save_dir / "model_stats.csv")
+
+    return paths
 
 
 def _train_torch_model(
@@ -151,12 +167,15 @@ def _train_torch_model(
             break
 
 
+# example usage:
 if __name__ == "__main__":
-    model_dir = Path("./cfire_lab_experiments/models/")
-    model_dir.mkdir(parents=True, exist_ok=True)
+    dataset_name = "abalone"
 
+    model_dir = Path(f"./experiments/models/{dataset_name}/")
+    model_dir.mkdir(parents=True, exist_ok=True)
+    dataset_fn = dataset_callables[dataset_name]
     init_model_and_explanations(
-        dataset_fn=datasets.get_abalone(),
-        n_models=10,
+        dataset=dataset_fn(),
+        n_models=2,
         save_dir=model_dir,
     )

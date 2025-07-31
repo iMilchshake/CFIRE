@@ -35,9 +35,12 @@ def facet_delta(alt, base):
                 "delta_test_acc": 100
                 * (pivot["test_acc"][alt] - pivot["test_acc"][base])
                 / pivot["test_acc"][base],
-                "delta_rule_size": pivot["rule_size"][alt] - pivot["rule_size"][base],
-                "delta_literal_cnt": pivot["literal_count"][alt]
-                - pivot["literal_count"][base],
+                "delta_rule_size": 100
+                * (pivot["rule_size"][alt] - pivot["rule_size"][base])
+                / pivot["rule_size"][base],
+                "delta_literal_cnt": 100
+                * (pivot["literal_count"][alt] - pivot["literal_count"][base])
+                / pivot["literal_count"][base],
             },
             index=pivot.index,
         )
@@ -50,7 +53,7 @@ def facet_delta(alt, base):
         value_vars=["delta_rule_size", "delta_literal_cnt"],
         var_name="metric",
         value_name="delta_size",
-    ).replace({"delta_rule_size": "Rule Size", "delta_literal_cnt": "Literal Count"})
+    ).replace({"delta_rule_size": "Rule Size (%)", "delta_literal_cnt": "Literal Count (%)"})
 
     style_order = sorted(df["seed"].unique())
     palette = sns.color_palette("tab10")
@@ -90,31 +93,32 @@ def facet_delta(alt, base):
 
 
 facet_delta("default_dedup", "default")
-facet_delta("inv_freq_set_cover_a=1", "default")
+facet_delta("ilp_min_rule_size", "default")
+facet_delta("ilp_min_rule_size", "inv_freq_set_cover_a=1.5")
 facet_delta("inv_freq_set_cover_a=0.5", "default")
+facet_delta("inv_freq_set_cover_a=1.0", "default")
 facet_delta("inv_freq_set_cover_a=1.5", "default")
-facet_delta("inv_freq_set_cover_a=1.5", "inv_freq_set_cover_a=1")
-facet_delta("inv_freq_set_cover_a=0.5", "inv_freq_set_cover_a=1")
+facet_delta("inv_freq_set_cover_a=2.0", "default")
 facet_delta("best_val_acc", "default")
 
 # --- relative boxplots (vs. “default”) ---------------------------------------
 
 metrics_info = {
-    "val_acc":  ("Δ Val Acc (%)",        True,  "rel_val_acc_by_composition.png"),
-    "test_acc": ("Δ Test Acc (%)",       True,  "rel_test_acc_by_composition.png"),
-    "rule_size": ("Δ Rule Size",         False, "rel_rule_size_by_composition.png"),
-    "literal_count": ("Δ Literal Count", False, "rel_literal_count_by_composition.png"),
+    "val_acc": ("Δ Val Acc (%)", True, "rel_val_acc_by_composition.png"),
+    "test_acc": ("Δ Test Acc (%)", True, "rel_test_acc_by_composition.png"),
+    "rule_size": ("Δ Rule Size (%)", False, "rel_rule_size_by_composition.png"),
+    "literal_count": ("Δ Literal Count (%)", False, "rel_literal_count_by_composition.png"),
 }
 
 for metric, (ylabel, pct, outfile) in metrics_info.items():
     pivot = df.pivot(index="group", columns="composition", values=metric)
     delta = pivot.sub(pivot["default"], axis=0)
-    if pct:                                   # % difference for accuracies
+    if pct:  # % difference for accuracies
         delta = 100 * delta.div(pivot["default"], axis=0)
     delta = (
-        delta.drop(columns=["default"])       # drop baseline (always 0)
-             .melt(ignore_index=False, var_name="composition", value_name="delta")
-             .reset_index()
+        delta.drop(columns=["default"])  # drop baseline (always 0)
+        .melt(ignore_index=False, var_name="composition", value_name="delta")
+        .reset_index()
     )
 
     plt.figure(figsize=(16, 8))

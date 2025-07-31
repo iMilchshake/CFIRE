@@ -1,15 +1,16 @@
+import gc
+from collections import defaultdict
+from functools import lru_cache
 from itertools import chain
+from typing import Dict
+from typing import List, Tuple, Set
 
 import numpy as np
-from collections import defaultdict
-from typing import List, Set, Tuple, Dict
-import math
+import pulp
 
 from lxg.models import DNFClassifier
 from .gely import ItemsetNode
-from .util import load_nn_dnfs
-from itertools import chain
-import pulp
+
 
 def greedy_itemsetnode_set_cover(X: set[int], F: list[tuple[set[int], ItemsetNode]]):
     '''
@@ -143,6 +144,76 @@ def get_inv_freq_set_cover(alpha: float):
 
     return inv_freq_set_cover
 
+
+def optimal_min_rules_cover(
+        universe_to_cover: Set[int],
+        candidate_rules: List[Tuple[Set[int], "ItemsetNode"]],
+) -> List["ItemsetNode"]:
+    """
+    Optimal set cover minimising total rule size
+    """
+
+    rules = deduplicate_rules(candidate_rules)
+    if not universe_to_cover or not rules:
+        return []
+
+    # bitmask prep
+    idx = {v: i for i, v in enumerate(universe_to_cover)}
+    full = (1 << len(idx)) - 1
+    masks, costs, nodes = [], [], []
+    for support, node in rules:
+        m = 0
+        for s in support:
+            if s in idx:
+                m |= 1 << idx[s]
+        if m:
+            masks.append(m)
+            costs.append(node.dnf.n_rules)
+            nodes.append(node)
+
+    order = sorted(range(len(masks)),
+                   key=lambda i: costs[i] / masks[i].bit_count())
+
+    best_cost = float("inf")
+    best_pick: List[int] = []
+
+    @lru_cache(maxsize=None)
+    def dfs(pos: int, covered: int, running: int):
+        nonlocal best_cost, best_pick
+        if running >= best_cost:
+            return
+        if covered == full:
+            best_cost, best_pick = running, path.copy()
+            return
+        if pos == len(order):
+            return
+
+        # better lower bound
+        remaining = len(idx) - covered.bit_count()
+        max_cover = max(masks[j].bit_count() for j in range(pos, len(order)))
+        min_cost = min(costs[j] for j in range(pos, len(order)))
+        need = (remaining + max_cover - 1) // max_cover
+        if running + need * min_cost >= best_cost:
+            return
+
+        i = order[pos]
+
+        # choose rule i
+        path.append(i)
+        dfs(pos + 1, covered | masks[i], running + costs[i])
+        path.pop()
+
+        # skip rule i
+        dfs(pos + 1, covered, running)
+
+    path: List[int] = []
+    dfs(0, 0, 0)
+
+    dfs.cache_clear()
+    gc.collect()
+
+    return [nodes[i] for i in best_pick]
+
 def greedy_score_cover(universe_to_cover: set[int], candidate_rules: list[tuple[set[int], ItemsetNode]], _lam=0.5, _lam2=0.5, _lam3=0):
     remaining_universe = universe_to_cover.copy()
     selected_cover_set = []
@@ -240,6 +311,16 @@ def _comp_ilp_optimal(supp, nodes):
         [list(chain.from_iterable([n.dnf[0] for n in chosen_nodes]))],
         tie_break="accuracy",
     )
+
+def get_ilp_solver(
+        cost_key,
+):
+    def fn(support_sets, nodes):
+        # reconstruct support sets / nodes as ilp_set_cover uses different interface
+        support_sets = [support_set for (support_set, node) in nodes]
+        nodes = [node for (support_set, node) in nodes]
+        return solve_ilp_set_cover(support_sets, nodes, cost_key)
+    return fn
 
 def solve_ilp_set_cover(support_sets, nodes,
                         cost_key=lambda n: 1,
