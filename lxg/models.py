@@ -211,7 +211,7 @@ def merge_rules(a, b):
 
 
 class DNFClassifier:
-    def __init__(self, rules: list[list[list[tuple]]], tie_break="first"):
+    def __init__(self, rules: list[list[list[tuple[int, tuple[float, float]]]]], tie_break="first"):
         # rule format: dimension, interval -> tuple(dimension, tuple(lower_limit, upper_limit))
         self.n_classes = len(rules)
         self.rules = rules

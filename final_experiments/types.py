@@ -3,6 +3,7 @@ from typing import NamedTuple
 from torch.utils.data import DataLoader
 
 
+
 class CFIREDataset(NamedTuple):
     """NamedTuple wrapper for cfire dataset tuple"""
     train_loader: DataLoader

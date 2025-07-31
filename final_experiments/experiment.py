@@ -2,7 +2,6 @@
 
 import logging
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Callable
@@ -10,23 +9,25 @@ from typing import Optional, Callable
 import numpy as np
 import torch
 from joblib import Parallel, delayed
-from joblib.parallel import default_parallel_config
 from torch import Tensor
 
 from cfire.cfire_module import CFIRE
 from cfire.util import __preprocess_explanations_ext
+
+# TODO: get rid of cfire_lab_experiments imports
 from cfire_lab_experiments.util import loader_to_tensor
 from cfire_lab_experiments.utils_cfire import load_model
-from final_experiments.models import load_or_train_models, ModelFiles
-from final_experiments.types import CFIREDataset
 from lxg.datasets import dataset_callables, RandomSeed
+from .evaluate import evaluate_cfire
+from .models import load_or_train_models, ModelFiles
+from .types import CFIREDataset
 
 
 @dataclass
 class CFIREExperiment:
     """stores configuration for one experiment evaluating one set of cfire parameters for multiple models and seeds"""
 
-    dataset: str
+    dataset_name: str
     n_models: int
     n_seeds: int
 
@@ -39,21 +40,25 @@ class CFIREExperiment:
 @dataclass
 class CFIRETask:
     cfire_seed: int
+    model_idx: int
     explanations_np: np.ndarray
     X_val_np: np.ndarray
+    X_test_np: np.ndarray
     y_val_model_pred_np: np.ndarray
+    y_test_model_pred_np: np.ndarray
     exp: CFIREExperiment
 
 
 def initialize_experiment(experiment: CFIREExperiment):
     """load dataset, train models, get local explanations"""
-    model_dir = Path(f"./experiments/models/{experiment.dataset}/")
+    model_dir = Path(f"./experiments/models/{experiment.dataset_name}/")
     model_dir.mkdir(parents=True, exist_ok=True)
-    dataset_fn = dataset_callables[experiment.dataset]
 
+    dataset_fn = dataset_callables[experiment.dataset_name]
     dataset = CFIREDataset._make(dataset_fn())  # convert tuple to named tuple
 
     models = load_or_train_models(dataset, experiment.n_models, model_dir)
+
     return models, dataset
 
 
@@ -69,7 +74,12 @@ def init_cfire(
     if sum(arg is not None for arg in (bin_threshold, bin_top_k)) != 1:
         raise ValueError("Specify either bin_threshold OR bin_top_k")
 
-    expl_bin: Callable = (lambda x: __preprocess_explanations_ext(x, threshold=bin_threshold, top_k=bin_top_k) > 0)
+    expl_bin: Callable = (
+        lambda x: __preprocess_explanations_ext(
+            x, threshold=bin_threshold, top_k=bin_top_k
+        )
+        > 0
+    )
 
     cfire = CFIRE(
         localexplainer_fn=None,
@@ -92,13 +102,20 @@ def init_cfire_tasks(
         # precalculate model inputs / predictions / explanations
         model = load_model(dataset.n_dim, dataset.n_classes, model_files.model_path)
         X_val, _ = loader_to_tensor(dataset.val_loader)
+        X_test, _ = loader_to_tensor(dataset.test_loader)
         y_val_model_pred: Tensor = model.predict_batch(X_val)
+        y_test_model_pred: Tensor = model.predict_batch(X_test)
 
         # convert to read only numpy arrays
         X_val_np = X_val.detach().cpu().numpy()
+        X_test_np = X_test.detach().cpu().numpy()
         y_val_model_pred_np = y_val_model_pred.detach().cpu().numpy()
+        y_test_model_pred_np = y_test_model_pred.detach().cpu().numpy()
+
         X_val_np.setflags(write=False)
+        X_test_np.setflags(write=False)
         y_val_model_pred_np.setflags(write=False)
+        y_test_model_pred_np.setflags(write=False)
 
         # load explanations
         explanations_np = torch.load(model_files.expl_path).detach().cpu().numpy()
@@ -108,9 +125,12 @@ def init_cfire_tasks(
             tasks.append(
                 CFIRETask(
                     cfire_seed=seed,
+                    model_idx=model_files.model_idx,
                     explanations_np=explanations_np,
                     X_val_np=X_val_np,
+                    X_test_np=X_test_np,
                     y_val_model_pred_np=y_val_model_pred_np,
+                    y_test_model_pred_np=y_test_model_pred_np,
                     exp=experiment,
                 )
             )
@@ -119,7 +139,10 @@ def init_cfire_tasks(
 
 
 def run_cfire_task(task: CFIRETask):
+    """perform all single threaded cfire steps"""
+
     with RandomSeed(task.cfire_seed):
+        # initialize cfire inside the process to reduce IPC
         cfire = init_cfire(
             explanations=task.explanations_np,
             frequency_threshold=task.exp.freq_threshold,
@@ -127,20 +150,40 @@ def run_cfire_task(task: CFIRETask):
             bin_top_k=None,  # TODO: add this?
             max_dt_depth=task.exp.max_dt_depth,
         )
+
+    # fit cfire
     cfire.fit(task.X_val_np, task.y_val_model_pred_np)
+
+    # TODO: test various set covering algorithms (be careful with ILP multi threaded lolz)
+
+    # TODO: run pruning
+
+    # evaluate cfire
+    metrics = evaluate_cfire(
+        cfire,
+        task.X_val_np,
+        task.X_test_np,
+        task.y_val_model_pred_np,
+        task.y_test_model_pred_np,
+    )
+
+    return task, cfire, metrics
+
 
 def main():
     logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
     # define experiment
     experiment = CFIREExperiment(
-        dataset="abalone",
+        dataset_name="abalone",
         n_models=3,
-        n_seeds=12,
+        n_seeds=6,
         freq_threshold=0.01,
         bin_threshold=0.01,
         max_dt_depth=7,
     )
+
+    logging.info(f"starting experiment: {experiment}")
 
     models, dataset = initialize_experiment(experiment)
     logging.info(f"initialized experiment")
@@ -148,15 +191,18 @@ def main():
     tasks = init_cfire_tasks(models, dataset, experiment)
     logging.info(f"initialized {len(tasks)} cfire tasks")
 
-    # run tasks concurrently
-    n_workers = 6
-    logging.info(f"starting processing with n_workers={n_workers}")
-    Parallel(
-        n_jobs=n_workers,
+    # run tasks concurrently, collect results
+    cfire_results = Parallel(
+        n_jobs=6,
         prefer="processes",
         verbose=50,
     )(delayed(run_cfire_task)(t) for t in tasks)
     logging.info("DONE")
+
+    # TODO: save results to disk. (cfire+metrics, also the task to be sure?)
+    for task, cfire, metrics in cfire_results:
+        print(f"model_idx={task.model_idx} seed={task.cfire_seed} -> {metrics}")
+
 
 if __name__ == "__main__":
     main()

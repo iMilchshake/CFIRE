@@ -26,7 +26,7 @@ EPS = 1e-7
 
 
 class ModelFiles(NamedTuple):
-    idx: int
+    model_idx: int
     model_path: Path
     expl_path: Path
 
@@ -51,7 +51,7 @@ def load_or_train_models(
 
     n_available_models = len(found_models)
     if n_available_models >= n_models:
-        found_models.sort(key=lambda p: p.idx)
+        found_models.sort(key=lambda model_files: model_files.model_idx)
         logging.info(f"re-using existing {n_models}/{n_available_models} models")
         return found_models[:n_models]
 
