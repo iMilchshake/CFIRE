@@ -7,20 +7,18 @@ from pathlib import Path
 from typing import Optional, Callable
 
 import numpy as np
+import pandas as pd
 import torch
 from joblib import Parallel, delayed
 from torch import Tensor
 
 from cfire.cfire_module import CFIRE
 from cfire.util import __preprocess_explanations_ext
-
-# TODO: get rid of cfire_lab_experiments imports
-from cfire_lab_experiments.util import loader_to_tensor
-from cfire_lab_experiments.utils_cfire import load_model
 from lxg.datasets import dataset_callables, RandomSeed
 from .evaluate import evaluate_cfire
-from .models import load_or_train_models, ModelFiles
+from .models import load_or_train_models, ModelFiles, load_model
 from .types import CFIREDataset
+from .util import loader_to_tensor
 
 
 @dataclass
@@ -173,10 +171,17 @@ def run_cfire_task(task: CFIRETask):
 def main():
     logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
+    # TODO: also define model directory at top level
+    experiment_dir = Path(
+        f"./experiments"
+    )  # in future me might want subdirs like "gridsearch","setcover",...
+
+    # TODO: build grid search that creates instances of experiment
+
     # define experiment
     experiment = CFIREExperiment(
         dataset_name="abalone",
-        n_models=3,
+        n_models=1,
         n_seeds=6,
         freq_threshold=0.01,
         bin_threshold=0.01,
@@ -193,15 +198,30 @@ def main():
 
     # run tasks concurrently, collect results
     cfire_results = Parallel(
-        n_jobs=6,
+        n_jobs=6,  # TODO: =#cores and optionally overwrite with env variable
         prefer="processes",
-        verbose=50,
+        verbose=10,
     )(delayed(run_cfire_task)(t) for t in tasks)
     logging.info("DONE")
 
-    # TODO: save results to disk. (cfire+metrics, also the task to be sure?)
+    # save results to disk
+    rows = []
     for task, cfire, metrics in cfire_results:
-        print(f"model_idx={task.model_idx} seed={task.cfire_seed} -> {metrics}")
+        rows.append(
+            {
+                "model_idx": task.model_idx,
+                "cfire_seed": task.cfire_seed,
+                **experiment.__dict__,
+                **metrics,
+            }
+        )
+
+    results_path = experiment_dir / "results" / experiment.dataset_name
+    results_path.mkdir(parents=True, exist_ok=True)
+
+    # TODO: how to deal with existing results in the future?
+    df = pd.DataFrame(rows)
+    df.to_csv(results_path / "results.csv", index=False)
 
 
 if __name__ == "__main__":

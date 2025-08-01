@@ -10,12 +10,12 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.utils.class_weight import compute_class_weight
 
-from cfire_lab_experiments.util import loader_to_tensor
 from final_experiments.types import CFIREDataset
+from final_experiments.util import loader_to_tensor
 from lxg.attribution import kernelshap
-from lxg.datasets import RandomSeed, dataset_callables
+from lxg.datasets import RandomSeed
 from lxg.models import make_ff
-from lxg.util import create_checkpoint
+from lxg.util import create_checkpoint, restore_checkpoint
 
 PATIENCE = 90  # early stop patience
 WEIGHT_DECAY = 1e-4
@@ -209,15 +209,10 @@ def _train_torch_model(
             break
 
 
-# example usage:
-if __name__ == "__main__":
-    dataset_name = "abalone"
+def load_model(n_dim: int, n_classes: int, model_path: Path) -> nn.Module:
 
-    model_dir = Path(f"./experiments/models/{dataset_name}/")
-    model_dir.mkdir(parents=True, exist_ok=True)
-    dataset_fn = dataset_callables[dataset_name]
-    init_model_and_explanations(
-        dataset=dataset_fn(),
-        n_models=2,
-        save_dir=model_dir,
-    )
+    # TODO: assumes fixed HIDDEN dims!
+    model = make_ff([n_dim, 128, 128, n_classes], torch.nn.ReLU).to("cpu")
+
+    restore_checkpoint(model_path, model, train=False)
+    return model
