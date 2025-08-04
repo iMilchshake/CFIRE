@@ -17,7 +17,10 @@ def evaluate_cfire(
     rule_size = get_rule_size(cfire.dnf.rules)
     literal_count = get_literal_count(cfire.dnf.rules)
 
-    # TODO: add more metrics
+    # TODO: add more metrics, e.g:
+    #   - various ruben metrics
+    #   - as cfire paper shows f1/prec/recall we should also include this for general performance
+    #   - pruning "metrics"
 
     return {
         "val_acc": val_acc,
