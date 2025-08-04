@@ -1,6 +1,9 @@
 import logging
+import pickle
 from argparse import ArgumentError
 from copy import deepcopy
+import gzip
+from pathlib import Path
 
 import numpy
 import numpy as np
@@ -205,3 +208,12 @@ class CFIRE:
 
     def eval(self):
         pass
+
+    def partial_dump(self, file_path: Path, *, compress_level: int = 6) -> None:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        attributes = ["dnf", "_itemsetnodes", "frequent_nodes", "_compute_times"]
+        state = {k: getattr(self, k) for k in attributes}
+
+        with gzip.open(file_path, mode="wb", compresslevel=compress_level) as file:
+            pickle.dump(state, file, protocol=pickle.HIGHEST_PROTOCOL)

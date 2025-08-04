@@ -1,6 +1,6 @@
 """high level entry to run cfire experiments"""
-
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +8,7 @@ from typing import Optional, Callable
 
 import numpy as np
 import pandas as pd
+import psutil
 import torch
 from joblib import Parallel, delayed
 from torch import Tensor
@@ -72,12 +73,7 @@ def init_cfire(
     if sum(arg is not None for arg in (bin_threshold, bin_top_k)) != 1:
         raise ValueError("Specify either bin_threshold OR bin_top_k")
 
-    expl_bin: Callable = (
-        lambda x: __preprocess_explanations_ext(
-            x, threshold=bin_threshold, top_k=bin_top_k
-        )
-        > 0
-    )
+    expl_bin: Callable = lambda x: __preprocess_explanations_ext(x, threshold=bin_threshold, top_k=bin_top_k) > 0
 
     cfire = CFIRE(
         localexplainer_fn=None,
@@ -167,27 +163,7 @@ def run_cfire_task(task: CFIRETask):
 
     return task, cfire, metrics
 
-
-def main():
-    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-
-    # TODO: also define model directory at top level
-    experiment_dir = Path(
-        f"./experiments"
-    )  # in future me might want subdirs like "gridsearch","setcover",...
-
-    # TODO: build grid search that creates instances of experiment
-
-    # define experiment
-    experiment = CFIREExperiment(
-        dataset_name="abalone",
-        n_models=1,
-        n_seeds=6,
-        freq_threshold=0.01,
-        bin_threshold=0.01,
-        max_dt_depth=7,
-    )
-
+def run_experiment(experiment: CFIREExperiment, experiments_dir: Path):
     logging.info(f"starting experiment: {experiment}")
 
     models, dataset = initialize_experiment(experiment)
@@ -197,14 +173,18 @@ def main():
     logging.info(f"initialized {len(tasks)} cfire tasks")
 
     # run tasks concurrently, collect results
+    n_cores = psutil.cpu_count(logical=False)  # consider physical cores only
+    n_jobs = int(os.getenv("N_JOBS", n_cores)) # use n_cores as fallback
     cfire_results = Parallel(
-        n_jobs=6,  # TODO: =#cores and optionally overwrite with env variable
+        n_jobs=n_jobs,
         prefer="processes",
         verbose=10,
     )(delayed(run_cfire_task)(t) for t in tasks)
-    logging.info("DONE")
+    logging.info(f"completed {len(tasks)} cfire tasks")
 
     # save results to disk
+    results_path = experiments_dir / "results" / experiment.dataset_name
+    results_path.mkdir(parents=True, exist_ok=True)
     rows = []
     for task, cfire, metrics in cfire_results:
         rows.append(
@@ -215,13 +195,45 @@ def main():
                 **metrics,
             }
         )
+        cfire.partial_dump(results_path / "cfire_dumps" / f"cfire_{task.model_idx}_{task.cfire_seed}")
 
-    results_path = experiment_dir / "results" / experiment.dataset_name
-    results_path.mkdir(parents=True, exist_ok=True)
-
-    # TODO: how to deal with existing results in the future?
+    # TODO: how to deal with already existing results in the future? (overwrite? ensure unique name?)
     df = pd.DataFrame(rows)
     df.to_csv(results_path / "results.csv", index=False)
+    logging.info("finished saving results")
+
+
+# TODO: this main() is just for testing -> we need some place to define various different experiments.
+def main():
+    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+
+    # TODO: also define model directory at top level
+    # TODO: in future me might want sub dirs like "gridsearch","setcover",...
+    experiments_dir = Path(f"./experiments")
+
+    # TODO: build grid search that creates instances of experiment
+    dataset_names = [
+        # "diggle", # OpenMLError: Dataset with data_id 694 not found. :(
+        # "vehicle", # wow, this takes ~3 minutes per cfire, but paper claims 20 sec?
+        "abalone",
+        # "beans", # broken interface, requires `random_state` as input?
+        "wine",
+        "iris", # e.g. here i observer -10% performance? (because we ensure that all classes are predicted? Ah test set is very small xd).
+    ]
+
+    experiments = [
+        CFIREExperiment(
+            dataset_name=dataset_name,
+            n_models=2, # cfire paper uses 50 models
+            n_seeds=3,
+            freq_threshold=0.01,
+            bin_threshold=0.01,
+            max_dt_depth=7,
+        ) for dataset_name in dataset_names
+    ]
+
+    for experiment in experiments:
+        run_experiment(experiment, experiments_dir)
 
 
 if __name__ == "__main__":
