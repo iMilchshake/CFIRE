@@ -1,5 +1,4 @@
 """high level entry to run cfire experiments"""
-
 import logging
 import sys
 from dataclasses import dataclass
@@ -205,6 +204,8 @@ def main():
     logging.info("DONE")
 
     # save results to disk
+    results_path = experiment_dir / "results" / experiment.dataset_name
+    results_path.mkdir(parents=True, exist_ok=True)
     rows = []
     for task, cfire, metrics in cfire_results:
         rows.append(
@@ -216,13 +217,12 @@ def main():
             }
         )
 
-    results_path = experiment_dir / "results" / experiment.dataset_name
-    results_path.mkdir(parents=True, exist_ok=True)
+        cfire.partial_dump(results_path / "cfire_dumps" / f"cfire_{task.model_idx}_{task.cfire_seed}")
+
 
     # TODO: how to deal with existing results in the future?
     df = pd.DataFrame(rows)
     df.to_csv(results_path / "results.csv", index=False)
-
 
 if __name__ == "__main__":
     main()
