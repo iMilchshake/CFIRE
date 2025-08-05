@@ -35,27 +35,46 @@ BinarizationConfig = Union[ThresholdBinarization, TopKBinarization]
 
 
 @dataclass
-class CFIREExperiment:
-    """stores configuration for one experiment evaluating one set of cfire parameters for multiple models and seeds"""
-    dataset_name: str
-    n_models: int
-    n_seeds: int
-
+class CFIREConfig:
+    """ Hyperparameters for initializing a cfire instance """
     freq_threshold: float
     bin_config: BinarizationConfig
     max_dt_depth: int
 
+@dataclass
+class CFIREExperiment:
+    """ Defines an Experiment for various cfire configurations """
+
+    # which hyperparameter configurations?
+    cfire_configs: list[CFIREConfig]
+
+    # on which dataset?
+    dataset_name: str
+
+    # and how many samples (#models / #cfire seeds)?
+    n_models: int
+    n_seeds: int
+
+
 
 @dataclass
 class CFIRETask:
+    """ All required data (for an isolated process) to fit and evaluate a cfire config"""
+
+    # for cfire initialization
+    cfire_config: CFIREConfig
+
+    # unique identifiers for export
+    cfire_config_idx: int
     cfire_seed: int
     model_idx: int
+
+    # input data for `.fit()`
     explanations_np: np.ndarray
     X_val_np: np.ndarray
     X_test_np: np.ndarray
     y_val_model_pred_np: np.ndarray
     y_test_model_pred_np: np.ndarray
-    exp: CFIREExperiment
 
 
 def initialize_experiment(experiment: CFIREExperiment, experiments_dir: Path):
@@ -80,15 +99,15 @@ def binarize_explanations(x: np.ndarray, *, binning: BinarizationConfig) -> np.n
 
 def init_cfire(task: CFIRETask):
     """ initializes a CFIRE object based on a CFIRETask """
-    expl_bin = partial(binarize_explanations, binning=task.exp.bin_config)
+    expl_bin = partial(binarize_explanations, binning=task.cfire_config.bin_config)
 
     cfire = CFIRE(
         localexplainer_fn=None,
         explanations=task.explanations_np,
         inference_fn=None,
         expl_binarization_fn=expl_bin,
-        frequency_threshold=task.exp.freq_threshold,
-        max_dt_depth=task.exp.max_dt_depth,
+        frequency_threshold=task.cfire_config.freq_threshold,
+        max_dt_depth=task.cfire_config.max_dt_depth,
     )
     cfire._verbose = False  # disable debug prints
     return cfire
@@ -122,19 +141,22 @@ def init_cfire_tasks(
         explanations_np = torch.load(model_files.expl_path).detach().cpu().numpy()
         explanations_np.setflags(write=False)
 
-        for seed in range(experiment.n_seeds):
-            tasks.append(
-                CFIRETask(
-                    cfire_seed=seed,
-                    model_idx=model_files.model_idx,
-                    explanations_np=explanations_np,
-                    X_val_np=X_val_np,
-                    X_test_np=X_test_np,
-                    y_val_model_pred_np=y_val_model_pred_np,
-                    y_test_model_pred_np=y_test_model_pred_np,
-                    exp=experiment,
+        # construct CFIRETask's
+        for cfire_config_idx, cfire_config in enumerate(experiment.cfire_configs):
+            for seed in range(experiment.n_seeds):
+                tasks.append(
+                    CFIRETask(
+                        cfire_config=cfire_config,
+                        cfire_config_idx=cfire_config_idx,
+                        cfire_seed=seed,
+                        model_idx=model_files.model_idx,
+                        explanations_np=explanations_np,
+                        X_val_np=X_val_np,
+                        X_test_np=X_test_np,
+                        y_val_model_pred_np=y_val_model_pred_np,
+                        y_test_model_pred_np=y_test_model_pred_np,
+                    )
                 )
-            )
 
     return tasks
 
@@ -160,11 +182,11 @@ def run_cfire_task(task: CFIRETask):
 
     return task, cfire, metrics # TODO: non-typed return >:(
 
-def run_experiment(experiment: CFIREExperiment, experiment_idx: int, experiments_dir: Path):
+def run_experiment(experiment: CFIREExperiment, experiments_dir: Path):
     """ Run one experiment and store results in the provided directory.
     Pass a unique experiment index if multiple experiments are evaluated in the same directory (e.g. grid search). """
 
-    logging.info(f"starting experiment idx={experiment_idx}: {experiment} -> {experiments_dir}")
+    logging.info(f"starting experiment: {experiment} -> {experiments_dir}")
 
     models, dataset = initialize_experiment(experiment, experiments_dir)
     logging.info(f"initialized experiment")
@@ -190,8 +212,9 @@ def run_experiment(experiment: CFIREExperiment, experiment_idx: int, experiments
         rows.append(
             {
                 "model_idx": task.model_idx,
+                "cfire_config_idx": task.cfire_config_idx,
                 "cfire_seed": task.cfire_seed,
-                **experiment.__dict__,
+                **task.cfire_config.__dict__,
                 **metrics,
             }
         )
@@ -202,7 +225,7 @@ def run_experiment(experiment: CFIREExperiment, experiment_idx: int, experiments
 
     # TODO: how to deal with already existing results in the future? (overwrite? ensure unique name?)
     df = pd.DataFrame(rows)
-    df.to_csv(results_path / f"results_{experiment_idx}.csv", index=False)
+    df.to_csv(results_path / f"results.csv", index=False)
     logging.info("finished saving results")
 
 
@@ -212,7 +235,7 @@ def main():
 
     # TODO: also define model directory at top level
     # TODO: in future me might want sub dirs like "gridsearch","setcover",...
-    experiments_dir = Path(f"./experiments")
+    experiments_dir = Path(f"./experiments/test/")
 
     # TODO: build grid search that creates instances of experiment
     dataset_names = [
@@ -227,17 +250,26 @@ def main():
     experiments = [
         CFIREExperiment(
             dataset_name=dataset_name,
-            n_models=2, # cfire paper uses 50 models
+            n_models=2,  # cfire paper uses 50 models
             n_seeds=3,
-            freq_threshold=0.01,
-            bin_config=ThresholdBinarization(threshold=0.01),
-            # bin_config=TopKBinarization(k=2),
-            max_dt_depth=7,
-        ) for dataset_name in dataset_names
+            cfire_configs=[
+                CFIREConfig(
+                    freq_threshold=0.01,
+                    bin_config=ThresholdBinarization(threshold=0.01),
+                    max_dt_depth=7,
+                ),
+                CFIREConfig(
+                    freq_threshold=0.01,
+                    bin_config=TopKBinarization(k=2),
+                    max_dt_depth=7,
+                ),
+            ],
+        )
+        for dataset_name in dataset_names
     ]
 
-    for experiment_idx, experiment in enumerate(experiments):
-        run_experiment(experiment, experiment_idx, experiments_dir)
+    for experiment in experiments:
+        run_experiment(experiment, experiments_dir)
 
 
 if __name__ == "__main__":
