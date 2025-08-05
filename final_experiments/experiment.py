@@ -3,8 +3,9 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -22,6 +23,17 @@ from .types import CFIREDataset
 from .util import loader_to_tensor
 
 
+@dataclass(frozen=True)
+class ThresholdBinarization:
+    threshold: float
+
+@dataclass(frozen=True)
+class TopKBinarization:
+    k: int
+
+BinarizationConfig = Union[ThresholdBinarization, TopKBinarization]
+
+
 @dataclass
 class CFIREExperiment:
     """stores configuration for one experiment evaluating one set of cfire parameters for multiple models and seeds"""
@@ -31,8 +43,7 @@ class CFIREExperiment:
     n_seeds: int
 
     freq_threshold: float
-    bin_threshold: float
-    # bin_top_k: int
+    bin_config: BinarizationConfig
     max_dt_depth: int
 
 
@@ -60,28 +71,25 @@ def initialize_experiment(experiment: CFIREExperiment):
 
     return models, dataset
 
+def binarize_explanations(x: np.ndarray, *, binning: BinarizationConfig) -> np.ndarray:
+    """ wrapper function that performs explanation binarization based on a binarization config """
+    if isinstance(binning, ThresholdBinarization):
+        return __preprocess_explanations_ext(x, threshold=binning.threshold, top_k=None) > 0
+    if isinstance(binning, TopKBinarization):
+        return __preprocess_explanations_ext(x, threshold=None, top_k=binning.k) > 0
+    raise TypeError(f"Unsupported binning config: {type(binning)}")
 
-def init_cfire(
-    explanations: np.ndarray,
-    frequency_threshold: float,
-    bin_threshold: Optional[float],
-    bin_top_k: Optional[int],
-    max_dt_depth: int,
-):
-    """high level wrapper to run a CFIRE experiment"""
-
-    if sum(arg is not None for arg in (bin_threshold, bin_top_k)) != 1:
-        raise ValueError("Specify either bin_threshold OR bin_top_k")
-
-    expl_bin: Callable = lambda x: __preprocess_explanations_ext(x, threshold=bin_threshold, top_k=bin_top_k) > 0
+def init_cfire(task: CFIRETask):
+    """ initializes a CFIRE object based on a CFIRETask """
+    expl_bin = partial(binarize_explanations, binning=task.exp.bin_config)
 
     cfire = CFIRE(
         localexplainer_fn=None,
-        explanations=explanations,
+        explanations=task.explanations_np,
         inference_fn=None,
         expl_binarization_fn=expl_bin,
-        frequency_threshold=frequency_threshold,
-        max_dt_depth=max_dt_depth,
+        frequency_threshold=task.exp.freq_threshold,
+        max_dt_depth=task.exp.max_dt_depth,
     )
     cfire._verbose = False  # disable debug prints
     return cfire
@@ -133,26 +141,16 @@ def init_cfire_tasks(
 
 
 def run_cfire_task(task: CFIRETask):
-    """perform all single threaded cfire steps"""
+    """ perform all single threaded cfire steps """
 
     with RandomSeed(task.cfire_seed):
-        # initialize cfire inside the process to reduce IPC
-        cfire = init_cfire(
-            explanations=task.explanations_np,
-            frequency_threshold=task.exp.freq_threshold,
-            bin_threshold=task.exp.bin_threshold,
-            bin_top_k=None,  # TODO: add this?
-            max_dt_depth=task.exp.max_dt_depth,
-        )
-
-    # fit cfire
+        cfire = init_cfire(task) # initialize cfire inside the process to reduce IPC
     cfire.fit(task.X_val_np, task.y_val_model_pred_np)
 
     # TODO: test various set covering algorithms (be careful with ILP multi threaded lolz)
 
     # TODO: run pruning
 
-    # evaluate cfire
     metrics = evaluate_cfire(
         cfire,
         task.X_val_np,
@@ -161,7 +159,7 @@ def run_cfire_task(task: CFIRETask):
         task.y_test_model_pred_np,
     )
 
-    return task, cfire, metrics
+    return task, cfire, metrics # TODO: non-typed return >:(
 
 def run_experiment(experiment: CFIREExperiment, experiments_dir: Path):
     logging.info(f"starting experiment: {experiment}")
@@ -195,6 +193,8 @@ def run_experiment(experiment: CFIREExperiment, experiments_dir: Path):
                 **metrics,
             }
         )
+
+        # dump a few relevant attributes of the final cfire object that might be relevant in the future
         cfire.partial_dump(results_path / "cfire_dumps" / f"cfire_{task.model_idx}_{task.cfire_seed}")
 
     # TODO: how to deal with already existing results in the future? (overwrite? ensure unique name?)
@@ -227,7 +227,8 @@ def main():
             n_models=2, # cfire paper uses 50 models
             n_seeds=3,
             freq_threshold=0.01,
-            bin_threshold=0.01,
+            bin_config=ThresholdBinarization(threshold=0.01),
+            # bin_config=TopKBinarization(k=2),
             max_dt_depth=7,
         ) for dataset_name in dataset_names
     ]
