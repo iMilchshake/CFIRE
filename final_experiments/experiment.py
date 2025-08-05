@@ -37,7 +37,6 @@ BinarizationConfig = Union[ThresholdBinarization, TopKBinarization]
 @dataclass
 class CFIREExperiment:
     """stores configuration for one experiment evaluating one set of cfire parameters for multiple models and seeds"""
-
     dataset_name: str
     n_models: int
     n_seeds: int
@@ -59,9 +58,9 @@ class CFIRETask:
     exp: CFIREExperiment
 
 
-def initialize_experiment(experiment: CFIREExperiment):
+def initialize_experiment(experiment: CFIREExperiment, experiments_dir: Path):
     """load dataset, train models, get local explanations"""
-    model_dir = Path(f"./experiments/models/{experiment.dataset_name}/")
+    model_dir = experiments_dir / "models" / experiment.dataset_name
     model_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_fn = dataset_callables[experiment.dataset_name]
@@ -161,10 +160,13 @@ def run_cfire_task(task: CFIRETask):
 
     return task, cfire, metrics # TODO: non-typed return >:(
 
-def run_experiment(experiment: CFIREExperiment, experiments_dir: Path):
-    logging.info(f"starting experiment: {experiment}")
+def run_experiment(experiment: CFIREExperiment, experiment_idx: int, experiments_dir: Path):
+    """ Run one experiment and store results in the provided directory.
+    Pass a unique experiment index if multiple experiments are evaluated in the same directory (e.g. grid search). """
 
-    models, dataset = initialize_experiment(experiment)
+    logging.info(f"starting experiment idx={experiment_idx}: {experiment} -> {experiments_dir}")
+
+    models, dataset = initialize_experiment(experiment, experiments_dir)
     logging.info(f"initialized experiment")
 
     tasks = init_cfire_tasks(models, dataset, experiment)
@@ -194,12 +196,13 @@ def run_experiment(experiment: CFIREExperiment, experiments_dir: Path):
             }
         )
 
+        # TODO: disabled for now until we need it.
         # dump a few relevant attributes of the final cfire object that might be relevant in the future
-        cfire.partial_dump(results_path / "cfire_dumps" / f"cfire_{task.model_idx}_{task.cfire_seed}")
+        # cfire.partial_dump(results_path / "cfire_dumps" / f"cfire_{experiment_idx}_{task.model_idx}_{task.cfire_seed}")
 
     # TODO: how to deal with already existing results in the future? (overwrite? ensure unique name?)
     df = pd.DataFrame(rows)
-    df.to_csv(results_path / "results.csv", index=False)
+    df.to_csv(results_path / f"results_{experiment_idx}.csv", index=False)
     logging.info("finished saving results")
 
 
@@ -233,8 +236,8 @@ def main():
         ) for dataset_name in dataset_names
     ]
 
-    for experiment in experiments:
-        run_experiment(experiment, experiments_dir)
+    for experiment_idx, experiment in enumerate(experiments):
+        run_experiment(experiment, experiment_idx, experiments_dir)
 
 
 if __name__ == "__main__":

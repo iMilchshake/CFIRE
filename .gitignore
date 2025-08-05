@@ -185,6 +185,9 @@ datasets/
 
 #/models/*
 /experiments/*
+!/experiments/configs/
+!/experiments/configs/**
+
 /cfire_lab_experiments/models/*
 /cfire_lab_experiments/experiments/rule-overlap-analysis/*
 /cfire_lab_experiments/experiments/covering_input_analysis/*
