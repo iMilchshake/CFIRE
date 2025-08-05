@@ -42,15 +42,11 @@ if __name__ == "__main__":
         )
     ]
 
-    experiments = [
-        CFIREExperiment(
+    for dataset in DATASETS:
+        experiment = CFIREExperiment(
             dataset_name=dataset,
             n_models=N_MODELS,
             n_seeds=N_SEEDS,
             cfire_configs=cfire_configs,
         )
-        for dataset in DATASETS
-    ]
-
-    for experiment_idx, experiment in enumerate(experiments):
         run_experiment(experiment, experiments_dir)
