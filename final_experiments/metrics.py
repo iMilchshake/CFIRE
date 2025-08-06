@@ -1,10 +1,9 @@
 from typing import TypeAlias, Tuple, Set, Dict, List
 import numpy as np
 
-Literal:    TypeAlias = Tuple[int, Tuple[float, float]]     # (dimension, (low, high)) interval test
-Clause:     TypeAlias = list[Literal]                       # Conjunction (AND) of literals
-ClassRules: TypeAlias = list[Clause]                        # Disjunction (OR) of clauses for one class label
-Rules:      TypeAlias = list[ClassRules]                    # List of ClassRules, one entry per class in the data set
+from final_experiments.metric_calculations.espresso import reformulate_rules_with_espresso
+from final_experiments.types import Literal, Clause, ClassRules, Rules
+from final_experiments.util import global_bounds
 
 Box: TypeAlias = list[Tuple[float, float]]
 
@@ -26,21 +25,6 @@ def get_unique_literal_count(rules: Rules) -> int:
         for clause in class_rules:
             unique_literals.update(clause)
     return len(unique_literals)
-
-
-def _global_bounds(rules: Rules) -> Dict[int, Tuple[float, float]]:
-    """Infer per‑dimension min/max across all Literals."""
-    bounds: Dict[int, Tuple[float, float]] = {}
-    for class_rules in rules:
-        for clause in class_rules:
-            for dim, (lo, hi) in clause:
-                if dim not in bounds:
-                    bounds[dim] = (lo, hi)
-                else:
-                    cur_lo, cur_hi = bounds[dim]
-                    bounds[dim] = (min(cur_lo, lo), max(cur_hi, hi))
-    return bounds
-
 
 def _expand_clause(clause: Clause, bounds: Dict[int, Tuple[float, float]]) -> Box:
     """Blow up a sparse clause into a full‑dimensional axis‑aligned box."""
@@ -72,7 +56,7 @@ def _intersection_volume(box_a: Box, box_b: Box) -> float:
 def get_class_iou_matrix(rules: Rules) -> list[list[float]]:
     """Return an N×N symmetric matrix of class‑wise IoU values."""
     n_classes = len(rules)
-    bounds = _global_bounds(rules)
+    bounds = global_bounds(rules)
 
     boxes: List[Box] = []
     cls_ids: List[int] = []
@@ -123,6 +107,23 @@ def max_offdiag_iou(iou: list[list[float]]) -> float:
     arr = np.asarray(iou)
     n = arr.shape[0]
     return arr[np.triu_indices(n, k=1)].max() if n > 1 else 0.0
+
+def espresso_reformulated_rules(rules: Rules,
+                                max_tuples: int = 1_000_000) -> Rules:
+    """
+    Return a new Rules object where each class has been
+    reformulated by Espresso-MV **without changing its
+    covered region**.  Other CFIRE code continues to work
+    because the structure (List[List[List[Literal]]]) is
+    unchanged.
+
+    Parameters
+    ----------
+    rules       : original CFIRE rules
+    max_tuples  : safety cap on the atomic grid size per class;
+                  if exceeded, that class is left untouched.
+    """
+    return reformulate_rules_with_espresso(rules, max_tuples=max_tuples)
 
 
 ## possible DNF -> minimized normal form

@@ -8,7 +8,7 @@ from final_experiments.experiment import (
     run_experiment,
     TopKBinarization,
 )
-from final_experiments.logging import init_logger
+from final_experiments.cfire_logging import init_logger
 
 # Unique experiment name
 EXPERIMENTS_NAME = "1_topk_vs_threshold_bin"
