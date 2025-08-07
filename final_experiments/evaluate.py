@@ -1,7 +1,8 @@
 import numpy as np
 
 from cfire.cfire_module import CFIRE
-from .metrics import get_rule_size, get_literal_count
+from .metrics import get_rule_size, get_literal_count, get_unique_literal_count, max_offdiag_iou, mean_offdiag_iou, get_class_iou_matrix
+from sklearn.metrics import precision_recall_fscore_support
 
 
 def evaluate_cfire(
@@ -12,19 +13,50 @@ def evaluate_cfire(
     y_test_model_pred: np.ndarray,
 ) -> dict:
 
-    val_acc = (cfire(X_val) == y_val_model_pred).mean()
-    test_acc = (cfire(X_test) == y_test_model_pred).mean()
+    y_val_cfire = cfire(X_val)
+    y_test_cfire = cfire(X_test)
+
+    val_acc = float((y_val_cfire == y_val_model_pred).mean())
+    test_acc = float((y_test_cfire == y_test_model_pred).mean())
+
+    val_prec, val_rec, val_f1, _ = precision_recall_fscore_support(
+        y_val_model_pred,
+        y_val_cfire,
+        average="macro", # un‑weighted mean over classes
+        zero_division=0, # 0 if undefined
+    )
+    test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
+        y_test_model_pred,
+        y_test_cfire,
+        average="macro",
+        zero_division=0,
+    )
+
+
     rule_size = get_rule_size(cfire.dnf.rules)
     literal_count = get_literal_count(cfire.dnf.rules)
+    unique_literal_count =  get_unique_literal_count(cfire.dnf.rules)
+    class_iou_matrix = get_class_iou_matrix(cfire.dnf.rules)
+    max_iou = max_offdiag_iou(class_iou_matrix)
+    mean_iou = mean_offdiag_iou(class_iou_matrix)
 
     # TODO: add more metrics, e.g:
-    #   - various ruben metrics
     #   - as cfire paper shows f1/prec/recall we should also include this for general performance
     #   - pruning "metrics"
 
     return {
         "val_acc": val_acc,
         "test_acc": test_acc,
+        "val_precision": val_prec,
+        "val_recall": val_rec,
+        "val_f1": val_f1,
+        "test_precision": test_prec,
+        "test_recall": test_rec,
+        "test_f1": test_f1,
+
         "rule_size": rule_size,
         "literal_count": literal_count,
+        "unique_literal_count": unique_literal_count,
+        "max_iou": max_iou,
+        "mean_iou": mean_iou,
     }
