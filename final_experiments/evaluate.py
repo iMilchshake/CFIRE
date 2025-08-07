@@ -1,9 +1,8 @@
 import numpy as np
 
 from cfire.cfire_module import CFIRE
-from .metrics import get_rule_size, get_literal_count, get_unique_literal_count, max_offdiag_iou, mean_offdiag_iou, get_class_iou_matrix
+from .metrics import get_rule_size, get_literal_count, get_unique_literal_count, max_offdiag_iou, mean_offdiag_iou, get_class_iou_matrix_mc
 from sklearn.metrics import precision_recall_fscore_support
-
 
 def evaluate_cfire(
     cfire: CFIRE,
@@ -25,6 +24,7 @@ def evaluate_cfire(
         average="macro", # un‑weighted mean over classes
         zero_division=0, # 0 if undefined
     )
+
     test_prec, test_rec, test_f1, _ = precision_recall_fscore_support(
         y_test_model_pred,
         y_test_cfire,
@@ -32,11 +32,11 @@ def evaluate_cfire(
         zero_division=0,
     )
 
-
     rule_size = get_rule_size(cfire.dnf.rules)
     literal_count = get_literal_count(cfire.dnf.rules)
     unique_literal_count =  get_unique_literal_count(cfire.dnf.rules)
-    class_iou_matrix = get_class_iou_matrix(cfire.dnf.rules)
+    #class_iou_matrix = get_class_iou_matrix(cfire.dnf.rules)
+    class_iou_matrix = get_class_iou_matrix_mc(cfire.dnf.rules)
     max_iou = max_offdiag_iou(class_iou_matrix)
     mean_iou = mean_offdiag_iou(class_iou_matrix)
 
