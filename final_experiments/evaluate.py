@@ -35,13 +35,12 @@ def evaluate_cfire(
     rule_size = get_rule_size(cfire.dnf.rules)
     literal_count = get_literal_count(cfire.dnf.rules)
     unique_literal_count =  get_unique_literal_count(cfire.dnf.rules)
-    #class_iou_matrix = get_class_iou_matrix(cfire.dnf.rules)
     class_iou_matrix = get_class_iou_matrix_mc(cfire.dnf.rules)
     max_iou = max_offdiag_iou(class_iou_matrix)
     mean_iou = mean_offdiag_iou(class_iou_matrix)
 
     # TODO: add more metrics, e.g:
-    #   - as cfire paper shows f1/prec/recall we should also include this for general performance
+    #   - are there any more cfire metrics from papaer we might want to include?
     #   - pruning "metrics"
 
     return {
