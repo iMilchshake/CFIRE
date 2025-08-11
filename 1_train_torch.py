@@ -14,8 +14,9 @@ from pathlib import Path
 from sklearn.metrics import confusion_matrix
 
 import lxg.util
+from lxg.attribution import kernelshap
 from lxg.util import create_checkpoint, _get_n_digits, _check_improved, _training_finished, _sample_new_model, TorchRandomSeed
-from lxg.datasets import _get_dataset_callable, nlp_tasks
+from lxg.datasets import _get_dataset_callable, nlp_tasks, RandomSeed
 
 
 def save_eval(base_dir, outputs_dir,
@@ -249,6 +250,7 @@ if __name__ == '__main__':
         outputs_dir = base_dir+'outputs/'; Path(outputs_dir).mkdir(exist_ok=True)
         losses_dir = base_dir+'losses/'; Path(losses_dir).mkdir(exist_ok=True)
         acc_dir = base_dir+'accuracies/'; Path(acc_dir).mkdir(exist_ok=True)
+        expl_dir = base_dir+'explanations/'; Path(expl_dir).mkdir(exist_ok=True)
 
         # generate seeds for models
         with TorchRandomSeed(args.model_seed):
@@ -257,9 +259,9 @@ if __name__ == '__main__':
 
         # get dataloaders and input/ output dims for task
         print(task)
-        if task == 'bool':
-            train_loader, test_loader, input_size, n_classes = \
-                _get_dataset_callable(task)(random_state=args.data_seed, batch_sizes=batch_sizes)
+        # if task == 'bool':
+        #     train_loader, test_loader, input_size, n_classes = \
+        #         _get_dataset_callable(task)(random_state=args.data_seed, batch_sizes=batch_sizes)
         # elif task in _variables.make_classification_configs:
         #     __task_data = lxg.util.load_pkl(Path(base_dir, 'data.pkl'))
         #     (np_X_tr, np_Y_tr) = __task_data['train']
@@ -293,20 +295,21 @@ if __name__ == '__main__':
         #     modelparams = [100, 100]
         #
         #
-        elif str(task).startswith('classification'):
-            batch_sizes = batch_sizes[0], -1#int(args.kwargs_data['n_samples']*0.2)
-            train_loader, test_loader, val_loader, input_size, n_classes = \
-                _get_dataset_callable('classification')(random_state=args.data_seed, batch_sizes=batch_sizes,
-                                            kwargs=args.kwargs_data)
-            (X_tr, Y_tr), (X_te, Y_te), (X_val, Y_val) = _get_dataset_callable('classification')(random_state=args.data_seed, batch_sizes=batch_sizes,
-                                                    kwargs=args.kwargs_data, as_torch=False)
+        # elif str(task).startswith('classification'):
+        #     batch_sizes = batch_sizes[0], -1#int(args.kwargs_data['n_samples']*0.2)
+        #     train_loader, test_loader, val_loader, input_size, n_classes = \
+        #         _get_dataset_callable('classification')(random_state=args.data_seed, batch_sizes=batch_sizes,
+        #                                     kwargs=args.kwargs_data)
+        #     (X_tr, Y_tr), (X_te, Y_te), (X_val, Y_val) = _get_dataset_callable('classification')(random_state=args.data_seed, batch_sizes=batch_sizes,
+        #                                             kwargs=args.kwargs_data, as_torch=False)
+        #
+        #     print(args.kwargs_data)
+        # else:
 
-            print(args.kwargs_data)
-        else:
-            # we flip validation and test here to keep the 'official' test split separate and instead use 'validation' to compute explanations
-            train_loader, test_loader, val_loader, input_size, n_classes = (
-                _get_dataset_callable(task)(random_state=args.data_seed, batch_sizes=batch_sizes))
-            validation = next(iter(val_loader))
+        # we flip validation and test here to keep the 'official' test split separate and instead use 'validation' to compute explanations
+        train_loader, test_loader, val_loader, input_size, n_classes = (
+            _get_dataset_callable(task)(random_state=args.data_seed, batch_sizes=batch_sizes))
+        validation = next(iter(val_loader))
         # print(len(validation));import sys; sys.exit()
         # Save test data and some basic statistics
         Y_train = []
@@ -327,12 +330,12 @@ if __name__ == '__main__':
         Y_train_distr /= torch.sum(Y_train_distr).item()
         print(Y_train_distr)
 
-
         X_test, Y_test = next(iter(test_loader))
         Y_test_distr = torch.unique(Y_test, return_counts=True)[1].to(torch.float)
         Y_test_distr /= torch.sum(Y_test_distr); logging.debug(Y_test_distr)
         print(Y_test_distr)
         assert len(torch.unique(Y_test)) == n_classes
+
 
         pid = os.getpid()
         metadata_fname = f'/meta_data_pid{pid}_{task}_{args.data_seed}.pkl'
@@ -368,14 +371,11 @@ if __name__ == '__main__':
         else:
             X_train_val_range = 2.  # magic number: ~ diameter of space occupied by embedding vectors
 
-
         # n_batches = 1234, max_epochs=100, e=2, b=64 -> "0100-0064"
         def epoch_batch_prefix(e, b):
             epochs = ''.join((n_digits_epoch-_get_n_digits(e))*['0']+[str(e)]) if e != 0 else ''.join(n_digits_epoch*['0'])
             batches = ''.join((n_digits_batch-_get_n_digits(b))*['0']+[str(b)]) if b != 0 else ''.join(n_digits_batch*['0'])
             return f'{epochs}-{batches}'
-
-        kernelshap_mask = torch.arange(0, X_test.shape[1]).unsqueeze(0)
 
         for s, seed in enumerate(seeds):  # run everything; data remains the same
             print(f'STARTING SEED {s}/{n_models}')
@@ -388,8 +388,6 @@ if __name__ == '__main__':
             if inference_fn is None:
                 inference_fn = model
 
-
-
             # setup check to stop training
             performance_improved = False
             training_finished = False
@@ -399,16 +397,16 @@ if __name__ == '__main__':
             loss_function = nn.CrossEntropyLoss()
 
             # eval + save before training
-            _dict_metrics = eval_model(model=model, X=X_test, Y=Y_test, inference_fn=inference_fn)
-            test_acc.append(_dict_metrics['accuracy'])
-            prefix = model_id + '_' + epoch_batch_prefix(0, 0)  # task_ModelSeed_DataSeed_epoch-batch
-
-            logging.debug(f'saving with prefix {prefix}')
-            save_eval(
-                base_dir, outputs_dir,
-                _dict_metrics,
-                prefix=prefix
-            )
+            # _dict_metrics = eval_model(model=model, X=X_test, Y=Y_test, inference_fn=inference_fn)
+            # test_acc.append(_dict_metrics['accuracy'])
+            # prefix = model_id + '_' + epoch_batch_prefix(0, 0)  # task_ModelSeed_DataSeed_epoch-batch
+            #
+            # logging.debug(f'saving with prefix {prefix}')
+            # save_eval(
+            #     base_dir, outputs_dir,
+            #     _dict_metrics,
+            #     prefix=prefix
+            # )
 
             # fname = model_dir + model_id + '_' + epoch_batch_prefix(0, 0) + '.ckpt'
             # create_checkpoint(fname,
@@ -441,13 +439,13 @@ if __name__ == '__main__':
                             _dict_metrics = \
                                 eval_model(model=model, X=X_test, Y=Y_test, inference_fn=inference_fn)
                             test_acc.append(_dict_metrics['accuracy'])
-                            prefix = model_id + '_' + epoch_batch_prefix(epoch, i+1)  # task_ModelSeed_DataSeed_epoch-batch
-                            logging.debug(f'saving with prefix {prefix}')
-                            save_eval(
-                                base_dir, outputs_dir,
-                                _dict_metrics,
-                                prefix=prefix
-                            )
+                            # prefix = model_id + '_' + epoch_batch_prefix(epoch, i+1)  # task_ModelSeed_DataSeed_epoch-batch
+                            # logging.debug(f'saving with prefix {prefix}')
+                            # save_eval(
+                            #     base_dir, outputs_dir,
+                            #     _dict_metrics,
+                            #     prefix=prefix
+                            # )
 
                         if i % 100 == 0:
                             print(f'    FINISHED: {epoch}.{i} - test acc {test_acc[-1]}')
@@ -495,26 +493,40 @@ if __name__ == '__main__':
                         break
                     print(f'        last test accuracies: \n\t\t\t{test_acc[-10:]}')
 
-            create_checkpoint(model_dir+model_id+'_'+epoch_batch_prefix(epoch, i)+'.ckpt',
-                                  model, optimizer=None)
+            # Store final model checkpoint
+            create_checkpoint(model_dir+model_id+'.ckpt', model, optimizer=None)
 
+            # Store final model eval
             _dict_metrics = eval_model(model=model, X=X_test, Y=Y_test, inference_fn=inference_fn)
-
-            prefix = model_id + '_' + epoch_batch_prefix(args.max_epochs, len(train_loader)+2)  # task_ModelSeed_DataSeed_epoch-batch
-            logging.debug(f'saving with prefix {prefix}')
             save_eval(
                 base_dir, outputs_dir,
                 _dict_metrics,
-                prefix=prefix
+                prefix=str(model_id)
             )
-            # task_ModelSeed_DataSeed_loss/testacc
-            fname_loss = losses_dir+model_id+'_loss.pkl'
-            fname_acc = acc_dir+model_id+'_testacc.pkl'
-            logging.debug(f'saving loss, acc in \n\t{fname_loss}\n\t{fname_acc}')
-            with open(fname_loss, 'wb') as f:
-                pkl.dump(losses, f)
-            with open(fname_acc, 'wb') as f:
-                pkl.dump(test_acc, f)
 
+            # get explanations
+            with RandomSeed(seed):
+                X_val, Y_val = validation
+                model.eval()
+
+                kernelshap_mask = torch.arange(0, X_val.shape[1])
+                with RandomSeed(seed):
+                    explanations = kernelshap(
+                        data=X_val,
+                        model=model,
+                        inference_fn=inference_fn,
+                        n_samples=300,
+                        masks=kernelshap_mask,
+                    )[0]
+                torch.save(explanations, Path(expl_dir,f"{model_id}_kernelshap.pt"))
+
+            # task_ModelSeed_DataSeed_loss/testacc
+            # fname_loss = losses_dir+model_id+'_loss.pkl'
+            # fname_acc = acc_dir+model_id+'_testacc.pkl'
+            # logging.debug(f'saving loss, acc in \n\t{fname_loss}\n\t{fname_acc}')
+            # with open(fname_loss, 'wb') as f:
+            #     pkl.dump(losses, f)
+            # with open(fname_acc, 'wb') as f:
+            #     pkl.dump(test_acc, f)
 
             del losses, test_acc, model, optim

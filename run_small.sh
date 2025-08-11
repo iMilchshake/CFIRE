@@ -9,6 +9,9 @@ echo "Using the following params for all: $META_PARAMS"
 WINE_PARAMS="--modelparams [128,128] --training-length 80 --batch-sizes [32,36]"
 python 1_train_torch.py $META_PARAMS $WINE_PARAMS --dataset wine  &
 
+wait
+exit
+
 IRIS_PARAMS="--modelparams [128,128] --training-length 80 --batch-sizes [32,38]"
 python 1_train_torch.py $META_PARAMS $IRIS_PARAMS --dataset iris  &
 

@@ -18,11 +18,9 @@ from cfire.cfire_module import CFIRE
 from cfire.util import __preprocess_explanations_ext
 from final_experiments.pruning import decide_by_wins, prune_rules
 from final_experiments.pruning_metrics import compute_rule_metrics
-from lxg.datasets import dataset_callables, RandomSeed
+from lxg.datasets import RandomSeed
 from .evaluate import evaluate_cfire
-from .models import load_or_train_models, ModelFiles, load_model
-from .types import CFIREDataset
-from .util import loader_to_tensor
+from .models import load_model, PretrainedModel, get_pretrained_models
 
 
 @dataclass(frozen=True)
@@ -58,7 +56,6 @@ class CFIREExperiment:
     n_seeds: int
 
 
-
 @dataclass
 class CFIRETask:
     """ All required data (for an isolated process) to fit and evaluate a cfire config"""
@@ -70,6 +67,7 @@ class CFIRETask:
     cfire_config_idx: int
     cfire_seed: int
     model_idx: int
+    expl_method: str
 
     # input data for `.fit()`
     explanations_np: np.ndarray
@@ -79,17 +77,23 @@ class CFIRETask:
     y_test_model_pred_np: np.ndarray
 
 
-def initialize_experiment(experiment: CFIREExperiment, experiments_dir: Path):
-    """load dataset, train models, get local explanations"""
-    model_dir = experiments_dir / "models" / experiment.dataset_name
-    model_dir.mkdir(parents=True, exist_ok=True)
+def initialize_experiment(experiment: CFIREExperiment):
+    """load dataset, pretrained models and explanations based on dataset name """
 
-    dataset_fn = dataset_callables[experiment.dataset_name]
-    dataset = CFIREDataset._make(dataset_fn())  # convert tuple to named tuple
+    # load pretrained models and val / test data
+    models, X_val, X_test = get_pretrained_models(Path(f"./data/cfire/{experiment.dataset_name}"))
 
-    models = load_or_train_models(dataset, experiment.n_models, model_dir)
+    models = models[:experiment.n_models]
 
-    return models, dataset
+    # determine data seed, ensure constraint that only one data seed it used
+    data_seeds = set([model.data_seed for model in models])
+    assert len(data_seeds) == 1
+    data_seed = data_seeds.pop()
+
+    # load named dataset tuple
+    # dataset = CFIREDataset._make(dataset_callables[experiment.dataset_name](random_state=data_seed))
+
+    return models, X_val, X_test
 
 def binarize_explanations(x: np.ndarray, *, binning: BinarizationConfig) -> np.ndarray:
     """ wrapper function that performs explanation binarization based on a binarization config """
@@ -116,17 +120,21 @@ def init_cfire(task: CFIRETask):
 
 
 def init_cfire_tasks(
-    models: list[ModelFiles], dataset: CFIREDataset, experiment: CFIREExperiment
+    models: list[PretrainedModel], X_val, X_test, experiment: CFIREExperiment
 ) -> list[CFIRETask]:
     tasks = []
-    for model_files in models:
+    for model_info in models:
+        assert model_info.dataset == experiment.dataset_name
 
         # precalculate model inputs / predictions / explanations
-        model = load_model(dataset.n_dim, dataset.n_classes, model_files.model_path)
-        X_val, _ = loader_to_tensor(dataset.val_loader)
-        X_test, _ = loader_to_tensor(dataset.test_loader)
+        model = load_model(model_info.model_dims, model_info.model_path)
+        # X_val, _ = loader_to_tensor(dataset.val_loader)
+        # X_test, _ = loader_to_tensor(dataset.test_loader)
         y_val_model_pred: Tensor = model.predict_batch(X_val)
         y_test_model_pred: Tensor = model.predict_batch(X_test)
+
+        print("val", X_val.shape)
+        print("test", X_test.shape)
 
         # convert to read only numpy arrays
         X_val_np = X_val.detach().cpu().numpy()
@@ -140,24 +148,26 @@ def init_cfire_tasks(
         y_test_model_pred_np.setflags(write=False)
 
         # load explanations
-        explanations_np = torch.load(model_files.expl_path).detach().cpu().numpy()
-        explanations_np.setflags(write=False)
+        for expl_method, expl_path in model_info.explanations.items():
+            explanations_np = torch.load(expl_path).detach().cpu().numpy()
+            explanations_np.setflags(write=False)
 
-        # construct CFIRETask's
-        for cfire_config_idx, cfire_config in enumerate(experiment.cfire_configs):
-            for seed in range(experiment.n_seeds):
-                tasks.append(
-                    CFIRETask(
-                        cfire_config=cfire_config,
-                        cfire_config_idx=cfire_config_idx,
-                        cfire_seed=seed,
-                        model_idx=model_files.model_idx,
-                        explanations_np=explanations_np,
-                        X_val_np=X_val_np,
-                        X_test_np=X_test_np,
-                        y_val_model_pred_np=y_val_model_pred_np,
-                        y_test_model_pred_np=y_test_model_pred_np,
-                    )
+            # construct CFIRETask's
+            for cfire_config_idx, cfire_config in enumerate(experiment.cfire_configs):
+                for seed in range(experiment.n_seeds):
+                    tasks.append(
+                        CFIRETask(
+                            cfire_config=cfire_config,
+                            cfire_config_idx=cfire_config_idx,
+                            cfire_seed=seed,
+                            model_idx=model_info.model_idx,
+                            expl_method=expl_method,
+                            explanations_np=explanations_np,
+                            X_val_np=X_val_np,
+                            X_test_np=X_test_np,
+                            y_val_model_pred_np=y_val_model_pred_np,
+                            y_test_model_pred_np=y_test_model_pred_np,
+                        )
                 )
 
     return tasks
@@ -203,26 +213,29 @@ def run_cfire_task(task: CFIRETask):
 
     return task, cfire, metrics_after_prune # TODO: non-typed return >:(
 
-def run_experiment(experiment: CFIREExperiment, experiments_dir: Path):
+def run_experiment(experiment: CFIREExperiment, experiments_dir: Path, use_seq=False):
     """ Run one experiment and store results in the provided directory.
     Pass a unique experiment index if multiple experiments are evaluated in the same directory (e.g. grid search). """
 
     logging.info(f"starting experiment: {experiment} -> {experiments_dir}")
 
-    models, dataset = initialize_experiment(experiment, experiments_dir)
+    models, X_val, X_test = initialize_experiment(experiment)
     logging.info(f"initialized experiment")
 
-    tasks = init_cfire_tasks(models, dataset, experiment)
+    tasks = init_cfire_tasks(models, X_val, X_test, experiment)
     logging.info(f"initialized {len(tasks)} cfire tasks")
 
     # run tasks concurrently, collect results
-    n_cores = psutil.cpu_count(logical=False)  # consider physical cores only
-    n_jobs = int(os.getenv("N_JOBS", n_cores)) # use n_cores as fallback
-    cfire_results = Parallel(
-        n_jobs=n_jobs,
-        prefer="processes",
-        verbose=10,
-    )(delayed(run_cfire_task)(t) for t in tasks)
+    if use_seq:
+        cfire_results = [run_cfire_task(t) for t in tasks]
+    else:
+        n_cores = psutil.cpu_count(logical=False)  # consider physical cores only
+        n_jobs = int(os.getenv("N_JOBS", n_cores)) # use n_cores as fallback
+        cfire_results = Parallel(
+            n_jobs=n_jobs,
+            prefer="processes",
+            verbose=10,
+        )(delayed(run_cfire_task)(t) for t in tasks)
     logging.info(f"completed {len(tasks)} cfire tasks")
 
     # save results to disk
@@ -262,26 +275,21 @@ def main():
     dataset_names = [
         # "diggle", # OpenMLError: Dataset with data_id 694 not found. :(
         # "vehicle", # wow, this takes ~3 minutes per cfire, but paper claims 20 sec?
-        "abalone",
+        # "abalone",
         # "beans", # broken interface, requires `random_state` as input?
         "wine",
-        "iris", # e.g. here i observer -10% performance? (because we ensure that all classes are predicted? Ah test set is very small xd).
+        # "iris", # e.g. here i observer -10% performance? (because we ensure that all classes are predicted? Ah test set is very small xd).
     ]
 
     experiments = [
         CFIREExperiment(
             dataset_name=dataset_name,
-            n_models=2,  # cfire paper uses 50 models
-            n_seeds=3,
+            n_models=50,
+            n_seeds=1,
             cfire_configs=[
                 CFIREConfig(
                     freq_threshold=0.01,
                     bin_config=ThresholdBinarization(threshold=0.01),
-                    max_dt_depth=7,
-                ),
-                CFIREConfig(
-                    freq_threshold=0.01,
-                    bin_config=TopKBinarization(k=2),
                     max_dt_depth=7,
                 ),
             ],
