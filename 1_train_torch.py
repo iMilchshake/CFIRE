@@ -14,7 +14,7 @@ from pathlib import Path
 from sklearn.metrics import confusion_matrix
 
 import lxg.util
-from lxg.attribution import kernelshap
+from lxg.attribution import kernelshap, lime, integrated_gradients
 from lxg.util import create_checkpoint, _get_n_digits, _check_improved, _training_finished, _sample_new_model, TorchRandomSeed
 from lxg.datasets import _get_dataset_callable, nlp_tasks, RandomSeed
 
@@ -505,20 +505,26 @@ if __name__ == '__main__':
             )
 
             # get explanations
-            with RandomSeed(seed):
-                X_val, Y_val = validation
-                model.eval()
+            X_val, Y_val = validation
+            model.eval()
 
-                kernelshap_mask = torch.arange(0, X_val.shape[1])
-                with RandomSeed(seed):
-                    explanations = kernelshap(
-                        data=X_val,
-                        model=model,
-                        inference_fn=inference_fn,
-                        n_samples=300,
-                        masks=kernelshap_mask,
-                    )[0]
-                torch.save(explanations, Path(expl_dir,f"{model_id}_kernelshap.pt"))
+            kernelshap_mask = torch.arange(0, X_val.shape[1])
+            with RandomSeed(seed):
+                kernelshap_expl = kernelshap(
+                    data=X_val,
+                    model=model,
+                    inference_fn=inference_fn,
+                    # n_samples=300,
+                    masks=kernelshap_mask,
+                )[0]
+                torch.save(kernelshap_expl, Path(expl_dir, f"{model_id}_kernelshap.pt"))
+
+                lime_expl= lime(
+                    data=X_val,
+                    model=model,
+                    inference_fn=inference_fn,
+                )[0]
+                torch.save(lime_expl, Path(expl_dir, f"{model_id}_lime.pt"))
 
             # task_ModelSeed_DataSeed_loss/testacc
             # fname_loss = losses_dir+model_id+'_loss.pkl'
