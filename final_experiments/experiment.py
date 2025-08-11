@@ -182,28 +182,28 @@ def run_cfire_task(task: CFIRETask):
         task.y_test_model_pred_np,
     )
 
-    rule_metrics_before_prune = compute_rule_metrics(cfire, task.X_val_np)
-    decision = decide_by_wins(rule_metrics_before_prune, win_threshold=0)
-    new_rules = prune_rules(cfire.dnf.rules, decision.to_remove)
+    # rule_metrics_before_prune = compute_rule_metrics(cfire, task.X_val_np)
+    # decision = decide_by_wins(rule_metrics_before_prune, win_threshold=0)
+    # new_rules = prune_rules(cfire.dnf.rules, decision.to_remove)
+    #
+    # # temp replace rules
+    # old_rules = cfire.dnf.rules
+    # cfire.dnf.rules = new_rules
+    #
+    # rule_metrics_after_prune = compute_rule_metrics(cfire, task.X_val_np)
+    #
+    # # restore rules
+    # cfire.dnf.rules = old_rules
+    #
+    # metrics_after_prune = evaluate_cfire(
+    #     cfire,
+    #     task.X_val_np,
+    #     task.X_test_np,
+    #     task.y_val_model_pred_np,
+    #     task.y_test_model_pred_np,
+    # )
 
-    # temp replace rules
-    old_rules = cfire.dnf.rules
-    cfire.dnf.rules = new_rules
-
-    rule_metrics_after_prune = compute_rule_metrics(cfire, task.X_val_np)
-
-    # restore rules
-    cfire.dnf.rules = old_rules
-
-    metrics_after_prune = evaluate_cfire(
-        cfire,
-        task.X_val_np,
-        task.X_test_np,
-        task.y_val_model_pred_np,
-        task.y_test_model_pred_np,
-    )
-
-    return task, cfire, metrics_after_prune # TODO: non-typed return >:(
+    return task, cfire, metrics_before_prune # TODO: non-typed return >:(
 
 def run_experiment(experiment: CFIREExperiment, experiments_dir: Path, use_seq=False):
     """ Run one experiment and store results in the provided directory.
