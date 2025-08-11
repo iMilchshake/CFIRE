@@ -15,11 +15,11 @@ import lxg.util
 from lxg.attribution import (
     integrated_gradients, smooth_grad, vanilla_grad,
     kernelshap, lime,
-    lime_limetab, shap_kernelshap,
+    # lime_limetab, shap_kernelshap,
     greedy_pgi_attribution, nup_ds_attribution)
 from lxg import datasets
 
-from baselines.util import load_baselines
+# from baselines.util import load_baselines
 
 from lxg.evaluation import PGI_all_k, PGI_le_k
 
@@ -182,10 +182,11 @@ if __name__ == '__main__':
     # the CNNs use some functions where no deterministic alternative is available
 
     # from xai4description import _variables_xai4description as _variables
-    from bvf import _variables_cobot as _variables
+    # from bvf import _variables_cobot as _variables
 
 
-    _base_dir = _variables.base_dir
+    # from cfire import _variables_cfire as _variables
+    # _base_dir = _variables.base_dir
     model_idxs = [-1]
 
     args = make_parser().parse_args()
@@ -217,7 +218,7 @@ if __name__ == '__main__':
     #     "hypercube-10000-5-0-0-0-0.01-0.01",
     #     "hypercube-10000-5-5-0-0-0.01-0.01",
     # ]
-    print(tasks)
+    print(f"tasks: {tasks}")
     # tasks = _variables.make_classification_configs
     # tasks = ['heloc', 'beans', 'ionosphere', 'breastcancer']
     # tasks = ['spf', 'spambase', 'btsc', 'breastw']
@@ -389,13 +390,13 @@ if __name__ == '__main__':
                 # ('ig', lambda x, y: integrated_gradients(**_grad_expls_args, data=x, targets=y, n_samples=200,
                 #                                                return_convergence_delta=True),
                 #  ),
-                # ('ks', lambda x, y: kernelshap(**_perturb_args, data=x, targets=y, masks=kernelshap_mask,
-                #                                      n_samples=300),
-                #  ),
-                # ('li', lambda x, y: lime(**_perturb_args, data=x, targets=y, n_samples=300),
-                #  ),
-                ('lit', lambda x, y: lime_limetab(**_perturb_args, data=x, targets=y, baselines=np.array(X_train))),
-                ('sks', lambda x, y: shap_kernelshap(**_perturb_args, data=x, targets=y, baselines=np.array(X_train))),
+                ('ks', lambda x, y: kernelshap(**_perturb_args, data=x, targets=y, masks=kernelshap_mask,
+                                                     n_samples=300),
+                 ),
+                ('li', lambda x, y: lime(**_perturb_args, data=x, targets=y, n_samples=300),
+                 ),
+                # ('lit', lambda x, y: lime_limetab(**_perturb_args, data=x, targets=y, baselines=np.array(X_train))),
+                # ('sks', lambda x, y: shap_kernelshap(**_perturb_args, data=x, targets=y, baselines=np.array(X_train))),
                 ('ig', lambda x, y: integrated_gradients(**_grad_expls_args, data=x, targets=y, n_samples=200,
                                                                return_convergence_delta=True, subtract_baseline=True),
                  ),
