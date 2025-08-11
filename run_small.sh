@@ -7,9 +7,10 @@ META_PARAMS="--directory ./data/cfire  --model-seed 666 --num-runs 50 --max-epoc
 echo "Using the following params for all: $META_PARAMS"
 
 WINE_PARAMS="--modelparams [128,128] --training-length 80 --batch-sizes [32,36]"
-python 1_train_models.py $META_PARAMS $WINE_PARAMS --dataset wine  &
+python 1_train_torch.py $META_PARAMS $WINE_PARAMS --dataset wine  &
+
 IRIS_PARAMS="--modelparams [128,128] --training-length 80 --batch-sizes [32,38]"
-python 1_train_models.py $META_PARAMS $IRIS_PARAMS --dataset iris  &
+python 1_train_torch.py $META_PARAMS $IRIS_PARAMS --dataset iris  &
 
 DIGGLE_PARAMS="--modelparams [128,128,128] --training-length 200 --batch-sizes [32,124]"
 python 1_train_torch.py $META_PARAMS $DIGGLE_PARAMS --dataset diggle  &
