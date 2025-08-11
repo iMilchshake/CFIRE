@@ -526,6 +526,13 @@ if __name__ == '__main__':
                 )[0]
                 torch.save(lime_expl, Path(expl_dir, f"{model_id}_lime.pt"))
 
+                lime_expl= integrated_gradients(
+                    data=X_val,
+                    model=model,
+                    inference_fn=inference_fn,
+                )[0]
+                torch.save(lime_expl, Path(expl_dir, f"{model_id}_IG.pt"))
+
             # task_ModelSeed_DataSeed_loss/testacc
             # fname_loss = losses_dir+model_id+'_loss.pkl'
             # fname_acc = acc_dir+model_id+'_testacc.pkl'
