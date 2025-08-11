@@ -237,7 +237,7 @@ if __name__ == '__main__':
             task = (f"hypercube-{d['n_samples']}-{d['n_informative']}-{d['n_constant']}-{d['n_redundant']}-"
                     f"{d['n_repeated']}-{d['flip_y']}-{d['std']}")
 
-        device = 'cpu' if torch.cuda.device_count()-1 > args.gpu_id < 0  else f"cuda:{args.gpu_id}"
+        device = f"cuda:{args.gpu_id}" if (args.gpu_id >= 0 and torch.cuda.is_available() and args.gpu_id < torch.cuda.device_count()) else "cpu"
         logging.debug(f'device: {device}')
         modelparams = args.modelparams
         batch_sizes = args.batch_sizes
@@ -256,42 +256,43 @@ if __name__ == '__main__':
             seeds = [s.item() for s in seeds]
 
         # get dataloaders and input/ output dims for task
+        print(task)
         if task == 'bool':
             train_loader, test_loader, input_size, n_classes = \
                 _get_dataset_callable(task)(random_state=args.data_seed, batch_sizes=batch_sizes)
-        elif task in _variables.make_classification_configs:
-            __task_data = lxg.util.load_pkl(Path(base_dir, 'data.pkl'))
-            (np_X_tr, np_Y_tr) = __task_data['train']
-            (np_X_te, np_Y_te) = __task_data['test']
-            batch_sizes = batch_sizes[0], len(np_X_te)
-            from lxg.datasets import _wrap_numpy_to_loader
-            input_size =np_X_tr.shape[1]
-            n_classes = max(np.unique(np_Y_tr))+1
-            train_loader, test_loader = (_wrap_numpy_to_loader(X=np_X_tr, Y=np_Y_tr, batch_size=batch_sizes[0], shuffle=True),
-                           _wrap_numpy_to_loader(X=np_X_te, Y=np_Y_te, batch_size=batch_sizes[1]))
-            __cfg = lxg.util.get_classification_config_from_fname(task)
-            if __cfg['n_features'] < 4:
-                modelparams = [8, 8]
-            elif __cfg['n_features'] == 4:
-                modelparams = [16, 16]
-            elif __cfg['n_features'] > 4:
-                modelparams = [32, 32]
-            args.modelparams = modelparams
-
-        elif task in _variables.hypercube_configs:
-            __task_data = lxg.util.load_pkl(Path(base_dir, 'data.pkl'))
-            (np_X_tr, np_Y_tr) = __task_data['X_tr'], __task_data['Y_tr']
-            (np_X_te, np_Y_te) = __task_data['X_te'], __task_data['Y_te']
-            batch_sizes = batch_sizes[0], len(np_X_te)
-            from lxg.datasets import _wrap_numpy_to_loader
-            input_size =np_X_tr.shape[1]
-            n_classes = len(np.unique(np_Y_tr))
-            train_loader, test_loader = (_wrap_numpy_to_loader(X=np_X_tr, Y=np_Y_tr, batch_size=batch_sizes[0], shuffle=True),
-                           _wrap_numpy_to_loader(X=np_X_te, Y=np_Y_te, batch_size=len(np_Y_te)))
-            __cfg = lxg.util.get_hypercube_config_from_fname(task)
-            modelparams = [100, 100]
-
-
+        # elif task in _variables.make_classification_configs:
+        #     __task_data = lxg.util.load_pkl(Path(base_dir, 'data.pkl'))
+        #     (np_X_tr, np_Y_tr) = __task_data['train']
+        #     (np_X_te, np_Y_te) = __task_data['test']
+        #     batch_sizes = batch_sizes[0], len(np_X_te)
+        #     from lxg.datasets import _wrap_numpy_to_loader
+        #     input_size =np_X_tr.shape[1]
+        #     n_classes = max(np.unique(np_Y_tr))+1
+        #     train_loader, test_loader = (_wrap_numpy_to_loader(X=np_X_tr, Y=np_Y_tr, batch_size=batch_sizes[0], shuffle=True),
+        #                    _wrap_numpy_to_loader(X=np_X_te, Y=np_Y_te, batch_size=batch_sizes[1]))
+        #     __cfg = lxg.util.get_classification_config_from_fname(task)
+        #     if __cfg['n_features'] < 4:
+        #         modelparams = [8, 8]
+        #     elif __cfg['n_features'] == 4:
+        #         modelparams = [16, 16]
+        #     elif __cfg['n_features'] > 4:
+        #         modelparams = [32, 32]
+        #     args.modelparams = modelparams
+        #
+        # elif task in _variables.hypercube_configs:
+        #     __task_data = lxg.util.load_pkl(Path(base_dir, 'data.pkl'))
+        #     (np_X_tr, np_Y_tr) = __task_data['X_tr'], __task_data['Y_tr']
+        #     (np_X_te, np_Y_te) = __task_data['X_te'], __task_data['Y_te']
+        #     batch_sizes = batch_sizes[0], len(np_X_te)
+        #     from lxg.datasets import _wrap_numpy_to_loader
+        #     input_size =np_X_tr.shape[1]
+        #     n_classes = len(np.unique(np_Y_tr))
+        #     train_loader, test_loader = (_wrap_numpy_to_loader(X=np_X_tr, Y=np_Y_tr, batch_size=batch_sizes[0], shuffle=True),
+        #                    _wrap_numpy_to_loader(X=np_X_te, Y=np_Y_te, batch_size=len(np_Y_te)))
+        #     __cfg = lxg.util.get_hypercube_config_from_fname(task)
+        #     modelparams = [100, 100]
+        #
+        #
         elif str(task).startswith('classification'):
             batch_sizes = batch_sizes[0], -1#int(args.kwargs_data['n_samples']*0.2)
             train_loader, test_loader, val_loader, input_size, n_classes = \
@@ -408,19 +409,21 @@ if __name__ == '__main__':
                 _dict_metrics,
                 prefix=prefix
             )
-            fname = model_dir + model_id + '_' + epoch_batch_prefix(0, 0) + '.ckpt'
-            create_checkpoint(fname,
-                              model, optimizer=None)
-            logging.debug(f'checkpoint created {fname}')
+
+            # fname = model_dir + model_id + '_' + epoch_batch_prefix(0, 0) + '.ckpt'
+            # create_checkpoint(fname,
+            #                   model, optimizer=None)
+            # logging.debug(f'checkpoint created {fname}')
+
             # keep count on how many batches we trained; esp. relevant if args.training_length > 0
             n_batches_trained_on = 0
-            if tasks == _variables.make_classification_configs:
-                _tree_dnf_baseline_dict = _fit_decision_tree_dnf(np_X_tr, np_Y_tr, np_X_te, np_Y_te, input_size,
-                                                                 seed=seed)
-                tree_pth = Path(base_dir,'trees'); _variables.__create_dir(tree_pth)
-                lxg.util.dump_pkl(_tree_dnf_baseline_dict,
-                                  fname=Path(tree_pth, f"tree_{seed}.pkl"))
-
+            # if tasks == _variables.make_classification_configs:
+            #     _tree_dnf_baseline_dict = _fit_decision_tree_dnf(np_X_tr, np_Y_tr, np_X_te, np_Y_te, input_size,
+            #                                                      seed=seed)
+            #     tree_pth = Path(base_dir,'trees'); _variables.__create_dir(tree_pth)
+            #     lxg.util.dump_pkl(_tree_dnf_baseline_dict,
+            #                       fname=Path(tree_pth, f"tree_{seed}.pkl"))
+            #
 
             with TorchRandomSeed(args.data_seed):
                 for epoch in range(args.max_epochs):
@@ -515,9 +518,3 @@ if __name__ == '__main__':
 
 
             del losses, test_acc, model, optim
-
-
-    '''
-    for ease of access:
-    plot all accuracies, save list of seeds sorted by accuracies
-    '''
