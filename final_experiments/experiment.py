@@ -90,9 +90,6 @@ def initialize_experiment(experiment: CFIREExperiment):
     assert len(data_seeds) == 1
     data_seed = data_seeds.pop()
 
-    # load named dataset tuple
-    # dataset = CFIREDataset._make(dataset_callables[experiment.dataset_name](random_state=data_seed))
-
     return models, X_val, X_test
 
 def binarize_explanations(x: np.ndarray, *, binning: BinarizationConfig) -> np.ndarray:
@@ -128,13 +125,8 @@ def init_cfire_tasks(
 
         # precalculate model inputs / predictions / explanations
         model = load_model(model_info.model_dims, model_info.model_path)
-        # X_val, _ = loader_to_tensor(dataset.val_loader)
-        # X_test, _ = loader_to_tensor(dataset.test_loader)
         y_val_model_pred: Tensor = model.predict_batch(X_val)
         y_test_model_pred: Tensor = model.predict_batch(X_test)
-
-        print("val", X_val.shape)
-        print("test", X_test.shape)
 
         # convert to read only numpy arrays
         X_val_np = X_val.detach().cpu().numpy()
@@ -248,6 +240,7 @@ def run_experiment(experiment: CFIREExperiment, experiments_dir: Path, use_seq=F
                 "model_idx": task.model_idx,
                 "cfire_config_idx": task.cfire_config_idx,
                 "cfire_seed": task.cfire_seed,
+                "expl_method": task.expl_method,
                 **task.cfire_config.__dict__,
                 **metrics,
             }
