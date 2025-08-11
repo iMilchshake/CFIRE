@@ -268,7 +268,7 @@ def main():
     dataset_names = [
         # "diggle", # OpenMLError: Dataset with data_id 694 not found. :(
         # "vehicle", # wow, this takes ~3 minutes per cfire, but paper claims 20 sec?
-        # "abalone",
+        "abalone",
         # "beans", # broken interface, requires `random_state` as input?
         "wine",
         # "iris", # e.g. here i observer -10% performance? (because we ensure that all classes are predicted? Ah test set is very small xd).

@@ -6,6 +6,9 @@
 META_PARAMS="--directory ./data/cfire  --model-seed 666 --num-runs 50 --max-epochs 500  --data-seed 11880"
 echo "Using the following params for all: $META_PARAMS"
 
+ABALONE_PARAMS="--modelparams [32,32] --training-length 1000 --batch-sizes [32,627]"
+python 1_train_torch.py $META_PARAMS $ABALONE_PARAMS --dataset abalone  &
+
 WINE_PARAMS="--modelparams [128,128] --training-length 80 --batch-sizes [32,36]"
 python 1_train_torch.py $META_PARAMS $WINE_PARAMS --dataset wine  &
 
@@ -24,8 +27,6 @@ python 1_train_torch.py $META_PARAMS $AUTOUNIV_PARAMS --dataset autouniv  &
 VEHILCE_PARAMS="--modelparams [128,128,128] --training-length 350 --batch-sizes [32,170]"
 python 1_train_torch.py $META_PARAMS $VEHILCE_PARAMS --dataset vehicle  &
 
-ABALONE_PARAMS="--modelparams [32,32] --training-length 1000 --batch-sizes [32,627]"
-python 1_train_torch.py $META_PARAMS $ABALONE_PARAMS --dataset abalone  &
 
 wait
 
