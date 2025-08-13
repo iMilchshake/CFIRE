@@ -36,9 +36,14 @@ def evaluate_cfire(
     results["rule_size"] = get_rule_size(rules)
     results["literal_count"] = get_literal_count(rules)
     results["unique_literal_count"] = get_unique_literal_count(rules)
+
     class_iou_matrix = get_class_iou_matrix_mc(rules)
     results["max_iou"] = max_offdiag_iou(class_iou_matrix)
     results["mean_iou"] = mean_offdiag_iou(class_iou_matrix)
+
+    results["t_explanations"] = cfire._compute_times['_calc_explanations']+cfire._compute_times['expl_binarization_fn']
+    results["t_rule_candidates"] = cfire._compute_times["_calculate_rule_candidates"]
+    results["t_compose_rules"] = cfire._compute_times['_compose_rule_model']
 
     # TODO: add more metrics, e.g:
     #   - are there any more cfire metrics from paper we might want to include?
