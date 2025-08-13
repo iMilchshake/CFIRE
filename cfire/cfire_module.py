@@ -123,6 +123,7 @@ class CFIRE:
                          # 'model_callable': self._inference_fn,
                          'compute_rules': True,
                          'dt_kwargs': {'max_depth': self._max_dt_depth},
+                         'subset_test': False # TODO: enable this?
                          }
 
             # TODO: uses `generate_synthetic_data`?

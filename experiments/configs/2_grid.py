@@ -15,15 +15,15 @@ EXPERIMENTS_NAME = "2_grid"
 
 # With how many models/seeds should each experiment be evaluated?
 N_MODELS = 10
-N_SEEDS = 3
+N_SEEDS = 1
 
 # Define all experiment permutations
 PARAMS = {
-    "freq_threshold": [0.01, 0.1],
-    "max_dt_depth": [7, 3],
-    "bin_config": [ThresholdBinarization(threshold=0.01), TopKBinarization(k=2)],
+    "freq_threshold": [0.01],
+    "max_dt_depth": [7],
+    "bin_config": [ThresholdBinarization(threshold=0.01)]
 }
-DATASETS = ["abalone", "wine", "iris"]
+DATASETS = ["breastcancer" ,"abalone", "wine", "iris"]
 
 if __name__ == "__main__":
     experiments_dir = Path(f"./experiments/") / EXPERIMENTS_NAME
@@ -49,4 +49,4 @@ if __name__ == "__main__":
             n_seeds=N_SEEDS,
             cfire_configs=cfire_configs,
         )
-        run_experiment(experiment, experiments_dir)
+        run_experiment(experiment, experiments_dir, timeout=120)
