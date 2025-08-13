@@ -225,7 +225,7 @@ def run_experiment(experiment: CFIREExperiment, experiments_dir: Path, use_seq=F
     if use_seq:
         cfire_results = []
         for task_idx, task in enumerate(tasks):
-            print(f"run task {task_idx+1}/{len(tasks)}")
+            print(f"run task {task_idx+1}/{len(tasks)}, model_idx = {task.model_idx}")
             result = run_cfire_task(task)
             cfire_results.append(result)
             print(f"FINISHED TASK {task_idx+1}")
