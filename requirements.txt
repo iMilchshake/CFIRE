@@ -11,3 +11,6 @@ Sphinx==8.2.3
 seaborn==0.13.2
 
 pulp==3.2.1
+
+pebble==5.1.3
+
