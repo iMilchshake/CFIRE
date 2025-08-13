@@ -1,8 +1,9 @@
 """high level entry to run cfire experiments"""
+import json
 import logging
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from functools import partial
 from pathlib import Path
 from typing import Union
@@ -22,6 +23,23 @@ from lxg.datasets import RandomSeed
 from .evaluate import evaluate_cfire
 from .models import load_model, PretrainedModel, get_pretrained_models
 
+
+class NumpyArrayEncoder(json.JSONEncoder):
+    """A custom JSON encoder for NumPy arrays."""
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
+
+def dump_cfire_task(task, filename: str):
+    """
+    Serializes a CFIRETask object (or any dataclass with numpy arrays)
+    to a JSON file.
+    """
+    with open(filename, 'w') as f:
+        # Convert dataclass to dict and use the custom encoder for numpy
+        json.dump(asdict(task), f, indent=4, cls=NumpyArrayEncoder)
+    print(f"Successfully dumped task data to {filename}")
 
 @dataclass(frozen=True)
 class ThresholdBinarization:
@@ -226,7 +244,11 @@ def run_experiment(experiment: CFIREExperiment, experiments_dir: Path, use_seq=F
         cfire_results = []
         for task_idx, task in enumerate(tasks):
             print(f"run task {task_idx+1}/{len(tasks)}, model_idx = {task.model_idx}")
+
+            filename = f"task_{task_idx}.json"
+            dump_cfire_task(task, filename)
             result = run_cfire_task(task)
+
             cfire_results.append(result)
             print(f"FINISHED TASK {task_idx+1}")
     else:
