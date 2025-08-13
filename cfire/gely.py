@@ -914,6 +914,8 @@ def list_closed_dscriminatory(C, N, i, t, D, I, T, results,
     #       2. check their applicability
     #       -> faithful rules.
 
+    print("> list_closed")
+
     if parent is None:
         raise ValueError
 
@@ -1014,10 +1016,13 @@ def list_closed_dscriminatory(C, N, i, t, D, I, T, results,
                                      rel_items_global=parent.rel_items_global, n_samples_global=parent.n_samples_global)
             parent.add_child(newNode_pp, 'right')
             # parent.add_child(newNode, 'right')
+            print(f"len(Y)={len(Y)} -> go deeper")
             list_closed_dscriminatory(C, N.union({_i_prime}), _i_prime_prime, t,
                         _D, I, T, results, _data_target, data_other,
                                       closure, parent=newNode_pp, direction='right',
                                       subset_test=subset_test)
+
+        print("exit")
 
     return
 
@@ -1082,6 +1087,7 @@ def gely_discriminatory(B, threshold, X_target, X_other, item_order, remove_copm
         _D.append(list(t_iids))
     _D = [set(d) for d in _D]
 
+
     closure = lambda X: _ti(_it(X, _D), _D)
     _fcis = []
     import numbers
@@ -1093,6 +1099,9 @@ def gely_discriminatory(B, threshold, X_target, X_other, item_order, remove_copm
         print(B)
         print(D)
         print("panic")
+
+    print("START COMPUTE RULES")
+
     try:
         if not compute_rules:
             root_node = ItemsetNode(None, I, rel_items_global=OrderedSet(I), n_samples_global=len(B))

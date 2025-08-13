@@ -170,8 +170,10 @@ def run_cfire_task(task: CFIRETask):
 
     with RandomSeed(task.cfire_seed):
         cfire = init_cfire(task) # initialize cfire inside the process to reduce IPC
-    cfire.fit(task.X_val_np, task.y_val_model_pred_np)
 
+    print("FITTING")
+    cfire.fit(task.X_val_np, task.y_val_model_pred_np)
+    print("DONE FITTING, EVALUATE NOW")
     # TODO: test various set covering algorithms (be careful with ILP multi threaded lolz)
 
     metrics_before_prune = evaluate_cfire(
@@ -181,6 +183,8 @@ def run_cfire_task(task: CFIRETask):
         task.y_val_model_pred_np,
         task.y_test_model_pred_np,
     )
+
+    print("DONE EVAL")
 
     # rule_metrics_before_prune = compute_rule_metrics(cfire, task.X_val_np)
     # decision = decide_by_wins(rule_metrics_before_prune, win_threshold=0)
@@ -219,7 +223,12 @@ def run_experiment(experiment: CFIREExperiment, experiments_dir: Path, use_seq=F
 
     # run tasks concurrently, collect results
     if use_seq:
-        cfire_results = [run_cfire_task(t) for t in tasks]
+        cfire_results = []
+        for task_idx, task in enumerate(tasks):
+            print(f"run task {task_idx+1}/{len(tasks)}")
+            result = run_cfire_task(task)
+            cfire_results.append(result)
+            print(f"FINISHED TASK {task_idx+1}")
     else:
         n_cores = psutil.cpu_count(logical=False)  # consider physical cores only
         n_jobs = int(os.getenv("N_JOBS", n_cores)) # use n_cores as fallback
