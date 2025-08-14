@@ -42,23 +42,53 @@ def canon(rule: Sequence) -> Tuple:
     return tuple(rule) if isinstance(rule, list) else rule
 
 def _normalize_matches(explain_out) -> List[List[RuleKey]]:
-    """Normalize CFIRE explain output to List[List[RuleKey]]."""
-    # Case A: iterable of (pred, matches)
+    """Normalize CFIRE explain output to List[List[RuleKey]].
+
+    Supported:
+      A) (preds, matches_per_sample)
+      B) iterable of (pred, matches) per sample
+      C) already List[List[RuleKey]]
+    Where each `matches` can be:
+      - None  -> treated as []
+      - List[Tuple[RuleKey, any_payload]]
+      - List[RuleKey]
+    """
+    # Case A: top-level tuple
+    if isinstance(explain_out, tuple) and len(explain_out) == 2:
+        _, matches_global = explain_out
+        return _normalize_matches(matches_global)
+
+    # Ensure indexable sequence
     try:
-        first = explain_out[0]
+        first = explain_out[0]  # type: ignore[index]
     except Exception:
         explain_out = list(explain_out)
         first = explain_out[0] if explain_out else None
 
+    # Case B: list of (pred, matches) pairs per-sample
     if isinstance(first, tuple) and len(first) == 2:
         out: List[List[RuleKey]] = []
-        for _, matches in explain_out:
-            keys = [k for (k, _) in matches]
-            out.append(keys)
+        for _, matches in explain_out:  # type: ignore[assignment]
+            if matches is None:
+                out.append([])
+                continue
+            # matches might be List[(RuleKey, payload)] or List[RuleKey]
+            if isinstance(matches, list) and matches:
+                m0 = matches[0]
+                # List[(RuleKey, payload)]
+                if isinstance(m0, tuple) and len(m0) >= 2 and isinstance(m0[0], tuple):
+                    out.append([k for (k, _) in matches])
+                # List[RuleKey]
+                elif isinstance(m0, tuple) and len(m0) == 2 and all(isinstance(x, (int, np.integer)) for x in m0):
+                    out.append(matches)
+                else:
+                    out.append([])
+            else:
+                out.append([])
         return out
 
-    # Case B: already List[List[RuleKey]]
-    return explain_out  # type: ignore[return-value]
+    # Case C: already List[List[RuleKey]]
+    return explain_out
 
 def _build_perf_by_key(cf: CFIRELike) -> Dict[RuleKey, PerfDict]:
     """Extract per‑rule accuracy from cf.dnf.rule_performances mapping."""

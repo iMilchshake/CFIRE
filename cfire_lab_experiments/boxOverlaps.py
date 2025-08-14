@@ -104,9 +104,6 @@ def _intersection_volume(box_a: np.ndarray, box_b: np.ndarray) -> float:
     return float(np.prod(high - low))
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def compute_box_overlap_matrix(
         classifier: "DNFClassifier",  # type: ignore[name‑defined]
