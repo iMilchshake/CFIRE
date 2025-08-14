@@ -14,7 +14,7 @@ from final_experiments.logger import init_logger
 EXPERIMENTS_NAME = "2_grid"
 
 # With how many models/seeds should each experiment be evaluated?
-N_MODELS = 10
+N_MODELS = 50
 N_SEEDS = 1
 
 # Define all experiment permutations
@@ -23,7 +23,23 @@ PARAMS = {
     "max_dt_depth": [7],
     "bin_config": [ThresholdBinarization(threshold=0.01)]
 }
-DATASETS = ["breastcancer" ,"abalone", "wine", "iris"]
+
+
+DATASETS=[
+    "abalone",
+    "breastw",
+    "spambase",
+    "beans",
+    "ionosphere",
+    "breastcancer",
+    "btsc",
+    "spf",
+    "wine",
+    "diggle",
+    "iris",
+    "vehicle",
+    "autouniv",
+]
 
 if __name__ == "__main__":
     experiments_dir = Path(f"./experiments/") / EXPERIMENTS_NAME
@@ -49,4 +65,4 @@ if __name__ == "__main__":
             n_seeds=N_SEEDS,
             cfire_configs=cfire_configs,
         )
-        run_experiment(experiment, experiments_dir, timeout=120)
+        run_experiment(experiment, experiments_dir, timeout=1200)

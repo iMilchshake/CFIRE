@@ -4,16 +4,18 @@ import logging
 import os
 import sys
 from concurrent.futures import TimeoutError as FutureTimeout
+from concurrent.futures import as_completed
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+import time
 from typing import Union
 
 import numpy as np
 import pandas as pd
 import psutil
 import torch
-from pebble import ProcessPool
+from pebble import ProcessExpired, ProcessPool
 from torch import Tensor
 
 from cfire.cfire_module import CFIRE
@@ -70,6 +72,7 @@ class CFIRETask:
     cfire_config: CFIREConfig
 
     # unique identifiers for export
+    task_idx: int
     cfire_config_idx: int
     cfire_seed: int
     model_idx: int
@@ -91,7 +94,8 @@ def initialize_experiment(experiment: CFIREExperiment):
         Path(f"./data/cfire/{experiment.dataset_name}")
     )
 
-    models = models[: experiment.n_models]
+    # get best n_models wrt. test accuracy
+    models = sorted(models, key=lambda m: m.test_acc, reverse=True)[:experiment.n_models]
 
     # determine data seed, ensure constraint that only one data seed it used
     data_seeds = set([model.data_seed for model in models])
@@ -133,6 +137,7 @@ def init_cfire_tasks(
     models: list[PretrainedModel], X_val, X_test, experiment: CFIREExperiment
 ) -> list[CFIRETask]:
     tasks = []
+    task_idx = 0
     for model_info in models:
         assert model_info.dataset == experiment.dataset_name
 
@@ -163,6 +168,7 @@ def init_cfire_tasks(
                     tasks.append(
                         CFIRETask(
                             cfire_config=cfire_config,
+                            task_idx=task_idx,
                             cfire_config_idx=cfire_config_idx,
                             cfire_seed=seed,
                             model_idx=model_info.model_idx,
@@ -174,6 +180,7 @@ def init_cfire_tasks(
                             y_test_model_pred_np=y_test_model_pred_np,
                         )
                     )
+                    task_idx += 1
 
     return tasks
 
@@ -181,12 +188,19 @@ def init_cfire_tasks(
 def run_cfire_task(task: CFIRETask):
     """perform all single threaded cfire steps"""
 
+    logging.info(f"    Starting task {task.task_idx}")
+    t0 = time.time()
+
     with RandomSeed(task.cfire_seed):
         cfire = init_cfire(task)  # initialize cfire inside the process to reduce IPC
     cfire.fit(task.X_val_np, task.y_val_model_pred_np)
 
+    logging.info(f"    Finished fitting task {task.task_idx} in {time.time() - t0:.2f}s")
+    t0 = time.time()
+
     # TODO: test various set covering algorithms (be careful with ILP multi threaded lolz)
 
+    logging.info(f"    Evaluating task {task.task_idx}")
     metrics_before_prune = evaluate_cfire(
         cfire,
         task.X_val_np,
@@ -196,6 +210,8 @@ def run_cfire_task(task: CFIRETask):
     )
 
     rule_metrics_before_prune = compute_rule_metrics(cfire, task.X_val_np)
+
+    # TODO: this is just "safe" threshold=0 pruning. Do we also want to add some stronger pruning?
     decision = decide_by_wins(rule_metrics_before_prune, win_threshold=0)
     new_rules = prune_rules(cfire.dnf.rules, decision.to_remove)
 
@@ -203,6 +219,7 @@ def run_cfire_task(task: CFIRETask):
     old_rules = cfire.dnf.rules
     cfire.dnf.rules = new_rules
 
+    # TODO: actually return these
     rule_metrics_after_prune = compute_rule_metrics(cfire, task.X_val_np)
     metrics_after_prune = evaluate_cfire(
         cfire,
@@ -215,30 +232,40 @@ def run_cfire_task(task: CFIRETask):
     # restore rules
     cfire.dnf.rules = old_rules
 
+    logging.info(f"    Finished evaluating task {task.task_idx} in {time.time() - t0:.2f}s")
+
     return metrics_before_prune
 
-
 def run_parallel_tasks_with_timeout(tasks, task_fn, timeout, n_workers):
-    """Run tasks in parallel with a hard per-task wall-clock timeout."""
-
     results = [None] * len(tasks)
-    total = len(tasks)
 
     with ProcessPool(max_workers=n_workers) as pool:
         futures = []
-        for t in tasks:
-            futures.append(pool.schedule(task_fn, args=(t,), timeout=timeout))
+        for idx, t in enumerate(tasks):
+            f = pool.schedule(task_fn, args=(t,), timeout=timeout)
+            f._idx = idx
+            futures.append(f)
 
-        for idx, future in enumerate(futures):
-            try:
-                results[idx] = future.result()
-                logging.info(f"finished task {idx+1}/{total}")
-            except FutureTimeout:
-                logging.warning(f"Task timed out after {timeout}s: index={idx}")
-            except Exception as exc:
-                logging.error(f"Task {idx} failed: {exc}")
+        try:
+            for f in as_completed(futures):
+                idx = f._idx
+                try:
+                    results[idx] = f.result()
+                    logging.info(f"  Finished task {idx}")
+                except TimeoutError:
+                    logging.warning(f"  Task timed out after {timeout}s: index={idx}")
+                except ProcessExpired as e:
+                    logging.error(f"  Task {idx} crashed (exit={e.exitcode}): {e}")
+                except Exception:
+                    logging.error(f"  Task {idx} failed", exc_info=True)
+        except KeyboardInterrupt:
+            logging.warning("Interrupted! Stopping workers...")
+            pool.stop()
+            pool.join()
+            raise
 
     return results
+
 
 
 def run_experiment(
@@ -254,6 +281,9 @@ def run_experiment(
     tasks = init_cfire_tasks(models, X_val, X_test, experiment)
     logging.info(f"initialized {len(tasks)} cfire tasks")
 
+    for task_idx, task in enumerate(tasks):
+        assert task_idx == task.task_idx
+    
     if use_seq:
         cfire_results = [run_cfire_task(t) for t in tasks]
     else:
