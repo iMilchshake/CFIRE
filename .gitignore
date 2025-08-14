@@ -191,7 +191,5 @@ cython_debug/
 /cfire_lab_experiments/models/*
 /cfire_lab_experiments/experiments/rule-overlap-analysis/*
 /cfire_lab_experiments/experiments/covering_input_analysis/*
-/cfire_lab_experiments/datasets/
-data/cfire
 
 __pycache__
