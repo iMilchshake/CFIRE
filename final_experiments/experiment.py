@@ -18,6 +18,8 @@ from torch import Tensor
 
 from cfire.cfire_module import CFIRE
 from cfire.util import __preprocess_explanations_ext
+from final_experiments.pruning import decide_by_wins, prune_rules
+from final_experiments.pruning_metrics import compute_rule_metrics
 from lxg.datasets import RandomSeed
 from .evaluate import evaluate_cfire
 from .models import load_model, PretrainedModel, get_pretrained_models
@@ -193,26 +195,25 @@ def run_cfire_task(task: CFIRETask):
         task.y_test_model_pred_np,
     )
 
-    # rule_metrics_before_prune = compute_rule_metrics(cfire, task.X_val_np)
-    # decision = decide_by_wins(rule_metrics_before_prune, win_threshold=0)
-    # new_rules = prune_rules(cfire.dnf.rules, decision.to_remove)
-    #
-    # # temp replace rules
-    # old_rules = cfire.dnf.rules
-    # cfire.dnf.rules = new_rules
-    #
-    # rule_metrics_after_prune = compute_rule_metrics(cfire, task.X_val_np)
-    #
-    # # restore rules
-    # cfire.dnf.rules = old_rules
-    #
-    # metrics_after_prune = evaluate_cfire(
-    #     cfire,
-    #     task.X_val_np,
-    #     task.X_test_np,
-    #     task.y_val_model_pred_np,
-    #     task.y_test_model_pred_np,
-    # )
+    rule_metrics_before_prune = compute_rule_metrics(cfire, task.X_val_np)
+    decision = decide_by_wins(rule_metrics_before_prune, win_threshold=0)
+    new_rules = prune_rules(cfire.dnf.rules, decision.to_remove)
+
+    # temp replace rules
+    old_rules = cfire.dnf.rules
+    cfire.dnf.rules = new_rules
+
+    rule_metrics_after_prune = compute_rule_metrics(cfire, task.X_val_np)
+    metrics_after_prune = evaluate_cfire(
+        cfire,
+        task.X_val_np,
+        task.X_test_np,
+        task.y_val_model_pred_np,
+        task.y_test_model_pred_np,
+    )
+
+    # restore rules
+    cfire.dnf.rules = old_rules
 
     return metrics_before_prune
 
