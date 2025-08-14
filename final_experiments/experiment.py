@@ -209,9 +209,9 @@ def run_cfire_task(task: CFIRETask):
         task.y_test_model_pred_np,
     )
 
-    logging.info(f"    Finished evaluating task {task.task_idx} in {time.time() - t0:.2f}s")
-
     rule_metrics_before_prune = compute_rule_metrics(cfire, task.X_val_np)
+
+    # TODO: this is just "safe" threshold=0 pruning. Do we also want to add some stronger pruning?
     decision = decide_by_wins(rule_metrics_before_prune, win_threshold=0)
     new_rules = prune_rules(cfire.dnf.rules, decision.to_remove)
 
@@ -219,6 +219,7 @@ def run_cfire_task(task: CFIRETask):
     old_rules = cfire.dnf.rules
     cfire.dnf.rules = new_rules
 
+    # TODO: actually return these
     rule_metrics_after_prune = compute_rule_metrics(cfire, task.X_val_np)
     metrics_after_prune = evaluate_cfire(
         cfire,
@@ -230,6 +231,8 @@ def run_cfire_task(task: CFIRETask):
 
     # restore rules
     cfire.dnf.rules = old_rules
+
+    logging.info(f"    Finished evaluating task {task.task_idx} in {time.time() - t0:.2f}s")
 
     return metrics_before_prune
 
