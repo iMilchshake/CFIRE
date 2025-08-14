@@ -241,7 +241,7 @@ def run_parallel_tasks_with_timeout(tasks, task_fn, timeout, n_workers):
 
 
 def run_experiment(
-    experiment: CFIREExperiment, experiments_dir: Path, timeout: int, use_seq=False,
+    experiment: CFIREExperiment, experiments_dir: Path, timeout: int = 120, use_seq=False,
 ):
     """Run one experiment and store results in the provided directory."""
 
