@@ -140,13 +140,11 @@ class CFIRE:
         n_classes = len(np.unique(self._labels))
         _DNF = []
 
-        # shape : [( feature_idx, (lower_bound, upper_bound) )]
-        dummy_rule = [(-1,(np.nan, np.nan))]
-
         for class_idx in range(n_classes):
             nodes_c = self._itemsetnodes[class_idx]
             if nodes_c is None or len(nodes_c) == 0:
-                _DNF.append([deepcopy(dummy_rule)])
+                _DNF.append(DNFClassifier(rules=[[]]))
+                self.frequent_nodes.append(ItemsetNodeCollection([], []))
                 continue
 
             # idx-set of supporting samples, ItemSetNode
@@ -154,7 +152,8 @@ class CFIRE:
             root = _all_nodes[0]; assert root.parent is None
             freq_nodes = root.get_frequent_children()
             if freq_nodes is None or len(freq_nodes) == 0:
-                _DNF.append([deepcopy(dummy_rule)])
+                _DNF.append(DNFClassifier(rules=[[]]))
+                self.frequent_nodes.append(ItemsetNodeCollection([], []))
                 continue
             _f, _s = [], []
             for f, s in zip(freq_nodes, class_support):
