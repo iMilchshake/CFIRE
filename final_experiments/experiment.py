@@ -19,7 +19,7 @@ from pebble import ProcessExpired, ProcessPool
 from torch import Tensor
 
 from cfire.cfire_module import CFIRE
-from cfire.util import __preprocess_explanations_ext
+from cfire.util import __preprocess_explanations_ext, __preprocess_explanations
 from final_experiments.pruning import decide_by_wins, prune_rules
 from final_experiments.pruning_metrics import compute_rule_metrics
 from lxg.datasets import RandomSeed
@@ -108,10 +108,7 @@ def initialize_experiment(experiment: CFIREExperiment):
 def binarize_explanations(x: np.ndarray, *, binning: BinarizationConfig) -> np.ndarray:
     """wrapper function that performs explanation binarization based on a binarization config"""
     if isinstance(binning, ThresholdBinarization):
-        return (
-            __preprocess_explanations_ext(x, threshold=binning.threshold, top_k=None)
-            > 0
-        )
+        return __preprocess_explanations(x, binning.threshold) > 0
     if isinstance(binning, TopKBinarization):
         return __preprocess_explanations_ext(x, threshold=None, top_k=binning.k) > 0
     raise TypeError(f"Unsupported binning config: {type(binning)}")

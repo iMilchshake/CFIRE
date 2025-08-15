@@ -46,7 +46,7 @@ def method_tie(df: pd.DataFrame, method: str) -> pd.DataFrame:
     return apply_tie_breaker(df[df["expl_method"] == method])
 
 # --- load ---
-results_dir = Path("./experiments/2_grid_fix/results/")
+results_dir = Path("./experiments/2_grid/results/")
 dataframes, fails = load_results(results_dir)
 
 for dataset, df in dataframes.items():
