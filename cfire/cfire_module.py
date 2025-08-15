@@ -140,9 +140,11 @@ class CFIRE:
         n_classes = len(np.unique(self._labels))
         _DNF = []
 
+        assert len(self._itemsetnodes) == n_classes
+
         for class_idx in range(n_classes):
             nodes_c = self._itemsetnodes[class_idx]
-            if nodes_c is None or len(nodes_c) == 0:
+            if nodes_c is None or len(nodes_c) == 0 or len(nodes_c[1]) == 0:
                 _DNF.append(DNFClassifier(rules=[[]]))
                 self.frequent_nodes.append(ItemsetNodeCollection([], []))
                 continue
