@@ -1,6 +1,9 @@
 import logging
-from typing import TypeAlias, Tuple, Set, Dict, List
+from typing import TypeAlias, Tuple, Set, Dict
+
 import numpy as np
+
+from cfire.cfire_module import ItemsetNodeCollection
 
 log = logging.getLogger(__name__)
 
@@ -239,3 +242,82 @@ def max_offdiag_iou(iou: list[list[float]]) -> float:
 # Espresso heuristic logic minimizer https://en.wikipedia.org/wiki/Espresso_heuristic_logic_minimizer
     # works with booleans, so we would need to convert the rules to boolean form
     # problem: has a reduce step that might throw away overlapping/competing rules, that we would normally tie-break via accuracy rule.
+
+
+def build_coverage_matrices(frequent_nodes: list[ItemsetNodeCollection]) -> list[np.ndarray]:
+    """
+    coverage_mats[c][i, j] == True <=> sample i is in support of node j of class c.
+    """
+    coverage_mats: list[np.ndarray] = []
+    for col in frequent_nodes:
+        supports = col.class_support
+        if not supports:
+            coverage_mats.append(np.empty((0, 0), dtype=bool))
+            continue
+        sample_universe = {i for s in supports for i in s}
+        n_samples = (max(sample_universe) + 1) if sample_universe else 0
+        assert n_samples > 0, "Class has nodes but no samples"
+        mat = np.zeros((n_samples, len(supports)), dtype=bool)
+        for j, s in enumerate(supports):
+            if s:
+                mat[list(s), j] = True
+        coverage_mats.append(mat)
+    return coverage_mats
+
+
+def mean_coverage_ratio(coverage_mats: list[np.ndarray]) -> float:
+    """
+    Average (over classes with nodes) of the fraction of samples covered by at least 1 node.
+    """
+    ratios = []
+    for cov_mat in coverage_mats:
+        n_samples, n_nodes = cov_mat.shape
+        if n_nodes == 0:
+            continue
+        ratios.append(float(cov_mat.any(axis=1).mean()))
+    return float(np.mean(ratios)) if ratios else 0.0
+
+
+def mean_single_coverage_ratio(coverage_mats: list[np.ndarray]) -> float:
+    """
+    Average (over classes with nodes) of the fraction of samples covered by exactly 1 node.
+    """
+    ratios = []
+    for cov_mat in coverage_mats:
+        n_samples, n_nodes = cov_mat.shape
+        if n_nodes == 0:
+            continue
+        depth_per_sample = cov_mat.sum(axis=1)
+        ratios.append(float((depth_per_sample == 1).mean()))
+    return float(np.mean(ratios)) if ratios else 0.0
+
+
+def mean_nodes_per_sample(coverage_mats: list[np.ndarray]) -> float:
+    """
+    Average (over classes with nodes) of the mean number of covering nodes per sample.
+    """
+    depths = []
+    for cov_mat in coverage_mats:
+        n_samples, n_nodes = cov_mat.shape
+        if n_nodes == 0:
+            continue
+        depths.append(float(cov_mat.sum(axis=1).mean()))
+    return float(np.mean(depths)) if depths else 0.0
+
+
+def mean_duplicate_nodes_ratio(coverage_mats: list[np.ndarray]) -> float:
+    """
+    Average (over classes with nodes) of the fraction of duplicate nodes.
+    """
+    def count_unique_columns(mat: np.ndarray) -> int:
+        seen = {mat[:, j].tobytes() for j in range(mat.shape[1])}
+        return len(seen)
+
+    ratios = []
+    for cov_mat in coverage_mats:
+        n_samples, n_nodes = cov_mat.shape
+        if n_nodes == 0:
+            continue
+        n_unique = count_unique_columns(cov_mat)
+        ratios.append(1.0 - (n_unique / n_nodes))
+    return float(np.mean(ratios)) if ratios else 0.0
