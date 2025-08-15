@@ -60,7 +60,7 @@ def evaluate_cfire(
     # quantify the lack of rules for an entire class / lack of predictions for individual samples
     results["missing_class_rules"] = sum(len(class_rules) == 0 for class_rules in cfire.dnf.rules)
     results["missing_pred_val"] = np.sum(y_val_cfire == -1) / len(y_val_cfire)
-    results["missing_pred_test"] = np.sum(y_test_cfire != -1) / len(y_test_cfire)
+    results["missing_pred_test"] = np.sum(y_test_cfire == -1) / len(y_test_cfire)
 
     # analyze input to set covering algorithm
     coverage_matricies = build_coverage_matrices(cfire.frequent_nodes)
