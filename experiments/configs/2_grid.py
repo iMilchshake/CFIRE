@@ -1,4 +1,5 @@
 from itertools import product
+import logging
 from pathlib import Path
 
 from final_experiments.experiment import (
@@ -19,11 +20,11 @@ N_SEEDS = 1
 
 # Define all experiment permutations
 PARAMS = {
-    "freq_threshold": [0.01],
-    "max_dt_depth": [7],
-    "bin_config": [ThresholdBinarization(threshold=0.01)]
+    "freq_threshold": [0.001, 0.01, 0.1, 0.25], 
+    "max_dt_depth": [14, 7, 3, 2], 
+    "bin_config": [ThresholdBinarization(threshold=0.01), ThresholdBinarization(threshold=0.1), ThresholdBinarization(threshold=0.25),
+                   TopKBinarization(k=2), TopKBinarization(k=3)],
 }
-
 
 DATASETS=[
     "abalone",
