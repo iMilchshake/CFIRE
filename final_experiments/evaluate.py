@@ -14,6 +14,21 @@ from .metrics import (
     mean_single_coverage_ratio,
     mean_nodes_per_sample,
     mean_duplicate_nodes_ratio,
+    normalize_explanations,
+    mean_absolute_attribution,
+    attribution_variance,
+    sparsity,
+    class_separation_in_attribution_space,
+    mean_active_features_per_sample,
+    mean_active_features_ratio,
+    mean_feature_activation_ratio,
+    features_inactive_ratio,
+    mean_feature_class_specificity,
+    mean_within_class_jaccard,
+    mean_across_class_jaccard,
+    class_separation_score,
+    all_features_active_ratio,
+    all_features_inactive_ratio,
 )
 
 
@@ -69,6 +84,26 @@ def evaluate_cfire(
     results["mean_nodes_per_sample"] = mean_nodes_per_sample(coverage_matricies)
     results["mean_duplicate_nodes_ratio"] = mean_duplicate_nodes_ratio(coverage_matricies)
     results["total_frequent_node_count"] = sum(cov_mat.shape[1] for cov_mat in coverage_matricies)
+
+    # metrics on normalized attributions
+    E_norm = normalize_explanations(cfire._explanations)
+    results["attr_mean_absolute_attribution"] = mean_absolute_attribution(E_norm)
+    results["attr_attribution_variance"] = attribution_variance(E_norm)
+    results["attr_sparsity"] = sparsity(E_norm)
+    results["attr_class_separation"] = class_separation_in_attribution_space(E_norm, y_val_model)
+
+    # metrics on binarized explanations
+    binarized = cfire._binarized_explanations
+    results["bin_mean_active_features_per_sample"] = mean_active_features_per_sample(binarized)
+    results["bin_mean_active_features_ratio"] = mean_active_features_ratio(binarized)
+    results["bin_mean_feature_activation_ratio"] = mean_feature_activation_ratio(binarized)
+    results["bin_features_inactive_ratio"] = features_inactive_ratio(binarized)
+    results["bin_mean_feature_class_specificity"] = mean_feature_class_specificity(binarized, y_val_model)
+    results["bin_mean_within_class_jaccard"] = mean_within_class_jaccard(binarized, y_val_model)
+    results["bin_mean_across_class_jaccard"] = mean_across_class_jaccard(binarized, y_val_model)
+    results["bin_class_separation_score"] = class_separation_score(binarized, y_val_model)
+    results["bin_all_features_active_ratio"] = all_features_active_ratio(binarized)
+    results["bin_all_features_inactive_ratio"] = all_features_inactive_ratio(binarized)
 
     # TODO: add more metrics, e.g:
     #   - are there any more cfire metrics from paper we might want to include?
