@@ -480,7 +480,7 @@ class ItemsetNode():
 
                 assert len(_X_app) == len(_Y_new)
 
-                if dt_kwargs is not None and 'mex_depth' in dt_kwargs.keys():
+                if dt_kwargs is not None and 'max_depth' in dt_kwargs.keys():
                     _max_depth = dt_kwargs['max_depth']
                 else:
                     # _max_depth = min([max(self.complexity_limit - len(self.itemset), 2), self.complexity_limit])
