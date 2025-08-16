@@ -20,17 +20,16 @@ def load_results(root: Path, ok_name: str = "results.csv") -> dict[str, pd.DataF
             out[subdir.name] = safe_read_csv(f)
     return out
 
-# ---------- core metrics ----------
 def get_stat_str(df: pd.DataFrame, metric_column: str) -> str:
-    vals = pd.to_numeric(df[metric_column], errors="coerce").dropna()
+    vals = pd.to_numeric(df[metric_column], errors="raise").dropna() # coerce?
     return "—" if vals.empty else f"{vals.mean():.2f}±{vals.std():.2f}"
 
-def apply_tie_breaker(df: pd.DataFrame) -> pd.DataFrame:
-    """Canonical selection: max val_acc per (model_idx + all PARAMS)."""
-    group_keys = ["model_idx"] + PARAMS
-    idx = df.groupby(group_keys, dropna=False)["val_acc"].idxmax()
+def apply_tie_breaker(df: pd.DataFrame, group_by: list[str] | None = None) -> pd.DataFrame:
+    """Canonical selection: max val_acc per grouping keys."""
+    if group_by is None:
+        group_by = ["model_idx"] + PARAMS
+    idx = df.groupby(group_by, dropna=False)["val_acc"].idxmax()
     return df.loc[idx]
-
 
 def metric_table_simple(df_sel: pd.DataFrame, hyperparam: str, metrics: list[str]) -> pd.DataFrame:
     grouped = df_sel.groupby(df_sel[hyperparam], dropna=False)
@@ -44,32 +43,50 @@ def metric_table_simple(df_sel: pd.DataFrame, hyperparam: str, metrics: list[str
         out = out.sort_index()
     except Exception:
         pass
-    return out
+    return out.T
 
 PARAMS = ["freq_threshold", "max_dt_depth", "bin_config"]
-METRICS = ["test_f1_weighted", "test_acc", "rule_size"]
+METRICS = [
+    "test_f1_weighted", "test_acc", "rule_size", "rule_count", "literal_count", "unique_literal_count",
+    "max_iou", "mean_iou", "t_rule_candidates", "t_compose_rules", "missing_class_rules",
+    "missing_pred_val", "missing_pred_test", "mean_coverage_ratio", "mean_single_coverage_ratio",
+    "mean_nodes_per_sample", "mean_duplicate_nodes_ratio", "total_frequent_node_count"
+]
 
-# kept for future extensibility
 DEFAULT_PARAMS = {
     "freq_threshold": 0.01,
     "max_dt_depth": 7,
     "bin_config": ThresholdBinarization(threshold=0.01),
 }
 
-def analyze_dataset(name: str, df: pd.DataFrame) -> None:
+def filter_to_defaults(df: pd.DataFrame, target_param: str) -> pd.DataFrame:
+    """ filter dataframe to fixed default parameters, but keep all values of target_param """
+    mask = pd.Series(True, index=df.index)
+    for p in PARAMS:
+        if p == target_param:
+            continue
+        mask &= df[p].astype(str) == str(DEFAULT_PARAMS[p])
+    return df.loc[mask]
+
+
+def analyze_dataset(name: str, df: pd.DataFrame, fix_others_to_default: bool = False) -> None:
     print(f"\n\n{'='*15} ANALYSIS FOR DATASET: '{name}' {'='*15}")
-    df_cfire = apply_tie_breaker(df)
     for param in PARAMS:
+        if fix_others_to_default:
+            df_filtered = filter_to_defaults(df, param)
+            df_cfire = apply_tie_breaker(df_filtered, ["model_idx", param])
+        else:
+            df_cfire = apply_tie_breaker(df)
         table = metric_table_simple(df_cfire, param, METRICS)
         print(f"\n[param = {param}]")
         print(table.to_string())
 
-def analyze_results(root: Path) -> None:
+def analyze_results(root: Path, fix_others_to_default: bool = False) -> None:
     dataframes = load_results(root)
     for dataset, df in dataframes.items():
-        analyze_dataset(dataset, df)
+        analyze_dataset(dataset, df, fix_others_to_default=fix_others_to_default)
+    print(df.columns.tolist())
 
-# ---------- entry point ----------
 if __name__ == "__main__":
     results_dir = Path("./experiments/2_grid/results/")
-    analyze_results(results_dir)
+    analyze_results(results_dir, fix_others_to_default=False)
