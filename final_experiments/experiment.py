@@ -229,8 +229,8 @@ def run_cfire_task(task: CFIRETask):
     )
 
     # aggressive pruning, raise threshold until performance loss is too high
-    best_pruned_dnf = None
-    best_prune_threshold = None
+    best_pruned_dnf = pruned_dnf # use safe pruning as default, in case the aggressive pruning fails
+    best_prune_threshold = 0
     for win_threshold in range(0, 100):
         decision = decide_by_wins(original_rule_metrics, win_threshold=win_threshold)
         pruned_dnf_candidate = DNFClassifier(prune_rules(original_dnf.rules, decision.to_remove), "accuracy")
@@ -238,7 +238,7 @@ def run_cfire_task(task: CFIRETask):
         pruned_acc = accuracy_score(pruned_dnf_candidate.predict(cfire._data), cfire._labels)
 
         # keep this dnf if relative loss in accuracy is smaller than 5%
-        if (original_acc - pruned_acc) / original_acc < 0.05:
+        if original_acc > 0.0 and (original_acc - pruned_acc) / original_acc < 0.05:
             best_pruned_dnf = pruned_dnf_candidate
             best_prune_threshold = win_threshold
         else:
