@@ -50,7 +50,11 @@ METRICS = [
     "test_f1_weighted", "test_acc", "rule_size", "rule_count", "literal_count", "unique_literal_count",
     "max_iou", "mean_iou", "t_rule_candidates", "t_compose_rules", "missing_class_rules",
     "missing_pred_val", "missing_pred_test", "mean_coverage_ratio", "mean_single_coverage_ratio",
-    "mean_nodes_per_sample", "mean_duplicate_nodes_ratio", "total_frequent_node_count"
+    "mean_nodes_per_sample", "mean_duplicate_nodes_ratio", "total_frequent_node_count",
+    'attr_mean_absolute_attribution', 'attr_attribution_variance', 'attr_sparsity', 'attr_class_separation',
+    'bin_mean_active_features_per_sample', 'bin_mean_active_features_ratio', 'bin_mean_feature_activation_ratio',
+    'bin_features_inactive_ratio', 'bin_mean_feature_class_specificity', 'bin_mean_within_class_jaccard',
+    'bin_mean_across_class_jaccard', 'bin_class_separation_score', 'bin_all_features_active_ratio', 'bin_all_features_inactive_ratio'
 ]
 
 DEFAULT_PARAMS = {
@@ -89,4 +93,4 @@ def analyze_results(root: Path, fix_others_to_default: bool = False) -> None:
 
 if __name__ == "__main__":
     results_dir = Path("./experiments/2_grid/results/")
-    analyze_results(results_dir, fix_others_to_default=False)
+    analyze_results(results_dir, fix_others_to_default=True)
