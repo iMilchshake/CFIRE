@@ -252,7 +252,7 @@ def _stats_summary(x: np.ndarray) -> dict:
     }
 
 
-def loggable_rule_metrics(rm: RuleMetrics) -> dict:
+def loggable_rule_metrics(rm: RuleMetrics, win_threshold) -> dict:
     """
     Flatten RuleMetrics into a dict of scalars with explicit names.
     - Drops winner_coverage_pct (as requested).
@@ -260,6 +260,8 @@ def loggable_rule_metrics(rm: RuleMetrics) -> dict:
     - Uses clause_* prefixes for per-clause summaries.
     """
     out: dict = {}
+
+    out["win_threshold"] = win_threshold
 
     # Totals
     clauses_total = int(len(rm.clause_keys))

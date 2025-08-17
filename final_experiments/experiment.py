@@ -16,6 +16,7 @@ import pandas as pd
 import psutil
 import torch
 from pebble import ProcessExpired, ProcessPool
+from sklearn.metrics import accuracy_score
 from torch import Tensor
 
 from cfire.cfire_module import CFIRE
@@ -23,6 +24,7 @@ from cfire.util import __preprocess_explanations_ext, __preprocess_explanations
 from final_experiments.pruning import decide_by_wins, prune_rules
 from final_experiments.pruning_metrics import compute_rule_metrics, loggable_rule_metrics
 from lxg.datasets import RandomSeed
+from lxg.models import DNFClassifier
 from .evaluate import evaluate_cfire
 from .models import load_model, PretrainedModel, get_pretrained_models
 
@@ -198,7 +200,27 @@ def run_cfire_task(task: CFIRETask):
     # TODO: test various set covering algorithms (be careful with ILP multi threaded lolz)
 
     logging.info(f"    Evaluating task {task.task_idx}")
-    metrics_before_prune = evaluate_cfire(
+    original_metrics = evaluate_cfire(
+        cfire,
+        task.X_val_np,
+        task.X_test_np,
+        task.y_val_model_pred_np,
+        task.y_test_model_pred_np,
+    )
+    original_rule_metrics = compute_rule_metrics(cfire, task.X_val_np)
+    original_dnf = cfire.dnf # keep original dnf
+    original_acc = accuracy_score(original_dnf.predict(cfire._data), cfire._labels)
+
+    # safe win_threshold=0 pruning
+    decision = decide_by_wins(original_rule_metrics, win_threshold=0)
+    pruned_rules = prune_rules(original_dnf.rules, decision.to_remove)
+    pruned_dnf = DNFClassifier(pruned_rules, "accuracy")
+    pruned_dnf.compute_rule_performance(cfire._data, cfire._labels)
+    pruned_acc = accuracy_score(pruned_dnf.predict(cfire._data), cfire._labels)
+    assert pruned_acc == original_acc, "safe pruning should not change predictions on validation data"
+    cfire.dnf = pruned_dnf
+    rule_metrics_safe_pruned = compute_rule_metrics(cfire, task.X_val_np)
+    metrics_safe_pruned = evaluate_cfire(
         cfire,
         task.X_val_np,
         task.X_test_np,
@@ -206,19 +228,26 @@ def run_cfire_task(task: CFIRETask):
         task.y_test_model_pred_np,
     )
 
-    rule_metrics_before_prune = compute_rule_metrics(cfire, task.X_val_np)
+    # aggressive pruning, raise threshold until performance loss is too high
+    best_pruned_dnf = None
+    best_prune_threshold = None
+    for win_threshold in range(0, 100):
+        decision = decide_by_wins(original_rule_metrics, win_threshold=win_threshold)
+        pruned_dnf_candidate = DNFClassifier(prune_rules(original_dnf.rules, decision.to_remove), "accuracy")
+        pruned_dnf_candidate.compute_rule_performance(cfire._data, cfire._labels)
+        pruned_acc = accuracy_score(pruned_dnf_candidate.predict(cfire._data), cfire._labels)
 
-    # TODO: this is just "safe" threshold=0 pruning. Do we also want to add some stronger pruning?
-    decision = decide_by_wins(rule_metrics_before_prune, win_threshold=0)
-    new_rules = prune_rules(cfire.dnf.rules, decision.to_remove)
+        # keep this dnf if relative loss in accuracy is smaller than 1%
+        if (original_acc - pruned_acc) / original_acc < 0.01:
+            best_pruned_dnf = pruned_dnf_candidate
+            best_prune_threshold = win_threshold
+        else:
+            break
 
-    # temp replace rules
-    old_rules = cfire.dnf.rules
-    cfire.dnf.rules = new_rules
-
-    # TODO: actually return these
-    rule_metrics_after_prune = compute_rule_metrics(cfire, task.X_val_np)
-    metrics_after_prune = evaluate_cfire(
+    # evaluate best pruning configuration
+    cfire.dnf = best_pruned_dnf
+    rule_metrics_best_pruned = compute_rule_metrics(cfire, task.X_val_np)
+    metrics_best_pruned = evaluate_cfire(
         cfire,
         task.X_val_np,
         task.X_test_np,
@@ -226,20 +255,18 @@ def run_cfire_task(task: CFIRETask):
         task.y_test_model_pred_np,
     )
 
-    # restore rules
-    cfire.dnf.rules = old_rules
+    cfire.dnf = original_dnf # restore original dnf
 
     logging.info(f"    Finished evaluating task {task.task_idx} in {time.time() - t0:.2f}s")
-
-    rule_log_before = loggable_rule_metrics(rule_metrics_before_prune)
-    rule_log_after = loggable_rule_metrics(rule_metrics_after_prune)
-
     result_bundle = {
-        "metrics_before": dict(metrics_before_prune),
-        "rule_log_before": rule_log_before,                # flat dict for CSV
+        "metrics": dict(original_metrics),
+        "rule_log": loggable_rule_metrics(original_rule_metrics, win_threshold=None),
 
-        "metrics_after": dict(metrics_after_prune),
-        "rule_log_after": rule_log_after,                  # flat dict for CSV
+        "metrics_safe_prune": dict(metrics_safe_pruned),
+        "rule_log_safe_prune": loggable_rule_metrics(rule_metrics_safe_pruned, win_threshold=0),
+
+        "metrics_best_prune": dict(metrics_best_pruned),
+        "rule_log_best_prune": loggable_rule_metrics(rule_metrics_best_pruned, win_threshold=best_prune_threshold)
     }
     return result_bundle
 
@@ -307,11 +334,8 @@ def run_experiment(
     results_path = experiments_dir / "results" / experiment.dataset_name
     results_path.mkdir(parents=True, exist_ok=True)
 
-
-    success_before_rows = []
-    success_after_rows = []
-    rule_before_rows = []
-    rule_after_rows = []
+    dictionary_names = {k for bundle in cfire_results if bundle for k in bundle}
+    rows = {key: [] for key in dictionary_names}
     failed_rows = []
 
     for task, bundle in zip(tasks, cfire_results):
@@ -320,38 +344,25 @@ def run_experiment(
             "cfire_config_idx": task.cfire_config_idx,
             "cfire_seed": task.cfire_seed,
             "expl_method": task.expl_method,
-            **task.cfire_config.__dict__,  # includes freq_threshold, bin_config, max_dt_depth
+            **task.cfire_config.__dict__,
         }
 
         if bundle is None:
             failed_rows.append(row_common)
             continue
 
-        # evaluate_cfire metrics (flat dicts)
-        mb = bundle.get("metrics_before", {}) or {}
-        ma = bundle.get("metrics_after", {}) or {}
-        success_before_rows.append({**row_common, **mb})
-        success_after_rows.append({**row_common, **ma})
+        for name in dictionary_names:
+            rows[name].append({**row_common, **(bundle.get(name, {}) or {})})
 
-        # compressed rule metrics (flat dicts)
-        rb = bundle.get("rule_log_before", {}) or {}
-        ra = bundle.get("rule_log_after", {}) or {}
-        rule_before_rows.append({**row_common, **rb})
-        rule_after_rows.append({**row_common, **ra})
+    for name, row_list in rows.items():
+        pd.DataFrame(row_list).to_csv(results_path / f"{name}.csv", index=False)
 
-    # write to CSVs
-    pd.DataFrame(success_before_rows).to_csv(results_path / "results_before.csv", index=False)
-    pd.DataFrame(success_after_rows).to_csv(results_path / "results_after.csv", index=False)
-    pd.DataFrame(rule_before_rows).to_csv(results_path / "rule_results_before.csv", index=False)
-    pd.DataFrame(rule_after_rows).to_csv(results_path / "rule_results_after.csv", index=False)
     pd.DataFrame(failed_rows).to_csv(results_path / "failed_runs.csv", index=False)
 
     logging.info(
-        f"saved {len(success_before_rows)} before, "
-        f"{len(success_after_rows)} after, "
-        f"{len(rule_before_rows)} rule-before, "
-        f"{len(rule_after_rows)} rule-after rows; "
-        f"{len(failed_rows)} failed"
+        "saved %s; %d failed",
+        ", ".join(f"{len(rows[n])} {n}" for n in rows),
+        len(failed_rows),
     )
 
 
