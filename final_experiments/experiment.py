@@ -21,7 +21,7 @@ from torch import Tensor
 from cfire.cfire_module import CFIRE
 from cfire.util import __preprocess_explanations_ext, __preprocess_explanations
 from final_experiments.pruning import decide_by_wins, prune_rules
-from final_experiments.pruning_metrics import compute_rule_metrics
+from final_experiments.pruning_metrics import compute_rule_metrics, loggable_rule_metrics
 from lxg.datasets import RandomSeed
 from .evaluate import evaluate_cfire
 from .models import load_model, PretrainedModel, get_pretrained_models
@@ -231,7 +231,17 @@ def run_cfire_task(task: CFIRETask):
 
     logging.info(f"    Finished evaluating task {task.task_idx} in {time.time() - t0:.2f}s")
 
-    return metrics_before_prune
+    rule_log_before = loggable_rule_metrics(rule_metrics_before_prune)
+    rule_log_after = loggable_rule_metrics(rule_metrics_after_prune)
+
+    result_bundle = {
+        "metrics_before": dict(metrics_before_prune),
+        "rule_log_before": rule_log_before,                # flat dict for CSV
+
+        "metrics_after": dict(metrics_after_prune),
+        "rule_log_after": rule_log_after,                  # flat dict for CSV
+    }
+    return result_bundle
 
 def run_parallel_tasks_with_timeout(tasks, task_fn, timeout, n_workers):
     results = [None] * len(tasks)
@@ -296,30 +306,52 @@ def run_experiment(
     # save results to disk
     results_path = experiments_dir / "results" / experiment.dataset_name
     results_path.mkdir(parents=True, exist_ok=True)
-    success_rows = []
+
+
+    success_before_rows = []
+    success_after_rows = []
+    rule_before_rows = []
+    rule_after_rows = []
     failed_rows = []
 
-    for task, metrics in zip(tasks, cfire_results):
-        row = {
+    for task, bundle in zip(tasks, cfire_results):
+        row_common = {
             "model_idx": task.model_idx,
             "cfire_config_idx": task.cfire_config_idx,
             "cfire_seed": task.cfire_seed,
             "expl_method": task.expl_method,
-            **task.cfire_config.__dict__,
+            **task.cfire_config.__dict__,  # includes freq_threshold, bin_config, max_dt_depth
         }
-        if metrics is not None:
-            row.update(metrics)
-            success_rows.append({**row, **metrics})
-        else:
-            failed_rows.append(row)
 
-    df_success = pd.DataFrame(success_rows)
-    df_success.to_csv(results_path / "results.csv", index=False)
-    df_failed = pd.DataFrame(failed_rows)
-    df_failed.to_csv(results_path / "failed_runs.csv", index=False)
+        if bundle is None:
+            failed_rows.append(row_common)
+            continue
+
+        # evaluate_cfire metrics (flat dicts)
+        mb = bundle.get("metrics_before", {}) or {}
+        ma = bundle.get("metrics_after", {}) or {}
+        success_before_rows.append({**row_common, **mb})
+        success_after_rows.append({**row_common, **ma})
+
+        # compressed rule metrics (flat dicts)
+        rb = bundle.get("rule_log_before", {}) or {}
+        ra = bundle.get("rule_log_after", {}) or {}
+        rule_before_rows.append({**row_common, **rb})
+        rule_after_rows.append({**row_common, **ra})
+
+    # write to CSVs
+    pd.DataFrame(success_before_rows).to_csv(results_path / "results_before.csv", index=False)
+    pd.DataFrame(success_after_rows).to_csv(results_path / "results_after.csv", index=False)
+    pd.DataFrame(rule_before_rows).to_csv(results_path / "rule_results_before.csv", index=False)
+    pd.DataFrame(rule_after_rows).to_csv(results_path / "rule_results_after.csv", index=False)
+    pd.DataFrame(failed_rows).to_csv(results_path / "failed_runs.csv", index=False)
 
     logging.info(
-        f"saved {len(success_rows)} successful runs and {len(failed_rows)} failed runs"
+        f"saved {len(success_before_rows)} before, "
+        f"{len(success_after_rows)} after, "
+        f"{len(rule_before_rows)} rule-before, "
+        f"{len(rule_after_rows)} rule-after rows; "
+        f"{len(failed_rows)} failed"
     )
 
 

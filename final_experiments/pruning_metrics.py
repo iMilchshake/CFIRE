@@ -234,3 +234,92 @@ def compute_rule_metrics(cfire: CFIRELike, X_val) -> RuleMetrics:
         share_multi=share_multi,
         collision_ratio=collision_ratio,
     )
+
+
+def _stats_summary(x: np.ndarray) -> dict:
+    x = np.asarray(x, dtype=float)
+    if x.size == 0:
+        return dict(count=0, mean=0.0, std=0.0, min=0.0, p25=0.0, median=0.0, p75=0.0, max=0.0)
+    return {
+        "count": int(x.size),
+        "mean": float(np.mean(x)),
+        "std": float(np.std(x)),
+        "min": float(np.min(x)),
+        "p25": float(np.percentile(x, 25)),
+        "median": float(np.percentile(x, 50)),
+        "p75": float(np.percentile(x, 75)),
+        "max": float(np.max(x)),
+    }
+
+
+def loggable_rule_metrics(rm: RuleMetrics) -> dict:
+    """
+    Flatten RuleMetrics into a dict of scalars with explicit names.
+    - Drops winner_coverage_pct (as requested).
+    - Renames match-hist keys to explicit sample_* names.
+    - Uses clause_* prefixes for per-clause summaries.
+    """
+    out: dict = {}
+
+    # Totals
+    clauses_total = int(len(rm.clause_keys))
+    samples_total = int(len(rm.match_per_sample))
+    out["clauses_total"] = clauses_total
+    out["samples_total"] = samples_total
+
+    # ---- Per-clause coverage distribution ----
+    coverage_per_clause = np.asarray(rm.coverage_per_rule, dtype=float) if clauses_total else np.array([])
+    cov_stats = _stats_summary(coverage_per_clause)
+    for k, v in cov_stats.items():
+        out[f"per_clause_coverage_{k}"] = v  # mean/std/min/… of clause coverages
+    out["clauses_active_pct"] = 100.0 * float((coverage_per_clause > 0).mean()) if coverage_per_clause.size else 0.0
+
+    # ---- Sample-level determinism / ambiguity (match histogram) ----
+    match_hist = rm.match_hist  # {num_rules_that_matched: sample_count}
+    samples_uncovered = int(match_hist.get(0, 0))                             # 0 matches
+    samples_single_match = int(match_hist.get(1, 0))                          # exactly 1 match
+    samples_multi_match = int(sum(v for k, v in match_hist.items() if k >= 2))# 2+ matches
+
+    denom = max(samples_total, 1)
+    out["samples_uncovered"] = samples_uncovered
+    out["samples_uncovered_pct"] = 100.0 * samples_uncovered / denom
+    out["samples_single_match"] = samples_single_match
+    out["samples_single_match_pct"] = 100.0 * samples_single_match / denom
+    out["samples_multi_match"] = samples_multi_match
+    out["samples_multi_match_pct"] = 100.0 * samples_multi_match / denom
+
+    out["avg_rules_matched_per_sample"] = float(sum(k * v for k, v in match_hist.items()) / denom) if match_hist else 0.0
+    out["max_rules_matched_per_sample"] = int(max(match_hist.keys())) if match_hist else 0
+
+    # ---- Collision ratios (already % upstream) ----
+    out["collision_intra_pct"] = float(rm.collision_ratio.get("intra", 0.0))
+    out["collision_inter_pct"] = float(rm.collision_ratio.get("inter", 0.0))
+
+    # ---- Wins/loss + per-clause win-rate stats ----
+    wins = np.asarray(rm.wins, dtype=float)
+    loss = np.asarray(rm.loss, dtype=float)
+    total_duels = wins + loss
+    with np.errstate(invalid="ignore", divide="ignore"):
+        clause_winrate = np.where(total_duels > 0, wins / total_duels, 0.0)
+    wr_stats = _stats_summary(clause_winrate)
+    out["wins_total"] = float(wins.sum())
+    out["loss_total"] = float(loss.sum())
+    for k, v in wr_stats.items():
+        out[f"clause_winrate_{k}"] = v
+
+
+    distinct_winner_clauses = int(len({w for w in rm.winner_key_per_sample if w is not None}))
+    out["distinct_winner_clauses"] = distinct_winner_clauses
+
+    # ---- Per-clause accuracies ----
+    clause_accs = np.array([float(d.get("accuracy", 0.0)) for d in rm.perf_by_key.values()], dtype=float)
+    acc_stats = _stats_summary(clause_accs)
+    for k, v in acc_stats.items():
+        out[f"clause_accuracy_{k}"] = v
+
+    if coverage_per_clause.size and clause_accs.size == coverage_per_clause.size and coverage_per_clause.sum() > 0:
+        out["clause_accuracy_weighted_mean"] = float((clause_accs * coverage_per_clause).sum() / coverage_per_clause.sum())
+    else:
+        out["clause_accuracy_weighted_mean"] = float(acc_stats["mean"])
+
+    return out
