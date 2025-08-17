@@ -1,8 +1,35 @@
 import numpy as np
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
 from cfire.cfire_module import CFIRE
-from .metrics import get_rule_size, get_literal_count, get_unique_literal_count, max_offdiag_iou, mean_offdiag_iou, get_class_iou_matrix_mc
-from sklearn.metrics import precision_recall_fscore_support, f1_score, accuracy_score
+from .metrics import (
+    get_rule_size,
+    get_literal_count,
+    get_unique_literal_count,
+    max_offdiag_iou,
+    mean_offdiag_iou,
+    get_class_iou_matrix_mc,
+    build_coverage_matrices,
+    mean_coverage_ratio,
+    mean_single_coverage_ratio,
+    mean_nodes_per_sample,
+    mean_duplicate_nodes_ratio,
+    normalize_explanations,
+    mean_absolute_attribution,
+    attribution_variance,
+    sparsity,
+    class_separation_in_attribution_space,
+    mean_active_features_per_sample,
+    mean_active_features_ratio,
+    mean_feature_activation_ratio,
+    features_inactive_ratio,
+    mean_feature_class_specificity,
+    mean_within_class_jaccard,
+    mean_across_class_jaccard,
+    class_separation_score,
+    all_features_active_ratio,
+    all_features_inactive_ratio,
+)
 
 
 def evaluate_cfire(
@@ -44,6 +71,39 @@ def evaluate_cfire(
     results["t_explanations"] = cfire._compute_times['_calc_explanations']+cfire._compute_times['expl_binarization_fn']
     results["t_rule_candidates"] = cfire._compute_times["_calculate_rule_candidates"]
     results["t_compose_rules"] = cfire._compute_times['_compose_rule_model']
+
+    # quantify the lack of rules for an entire class / lack of predictions for individual samples
+    results["missing_class_rules"] = sum(len(class_rules) == 0 for class_rules in cfire.dnf.rules)
+    results["missing_pred_val"] = np.sum(y_val_cfire == -1) / len(y_val_cfire)
+    results["missing_pred_test"] = np.sum(y_test_cfire == -1) / len(y_test_cfire)
+
+    # analyze input to set covering algorithm
+    coverage_matricies = build_coverage_matrices(cfire.frequent_nodes)
+    results["mean_coverage_ratio"] = mean_coverage_ratio(coverage_matricies)
+    results["mean_single_coverage_ratio"] = mean_single_coverage_ratio(coverage_matricies)
+    results["mean_nodes_per_sample"] = mean_nodes_per_sample(coverage_matricies)
+    results["mean_duplicate_nodes_ratio"] = mean_duplicate_nodes_ratio(coverage_matricies)
+    results["total_frequent_node_count"] = sum(cov_mat.shape[1] for cov_mat in coverage_matricies)
+
+    # metrics on normalized attributions
+    E_norm = normalize_explanations(cfire._explanations)
+    results["attr_mean_absolute_attribution"] = mean_absolute_attribution(E_norm)
+    results["attr_attribution_variance"] = attribution_variance(E_norm)
+    results["attr_sparsity"] = sparsity(E_norm)
+    results["attr_class_separation"] = class_separation_in_attribution_space(E_norm, y_val_model)
+
+    # metrics on binarized explanations
+    binarized = cfire._binarized_explanations
+    results["bin_mean_active_features_per_sample"] = mean_active_features_per_sample(binarized)
+    results["bin_mean_active_features_ratio"] = mean_active_features_ratio(binarized)
+    results["bin_mean_feature_activation_ratio"] = mean_feature_activation_ratio(binarized)
+    results["bin_features_inactive_ratio"] = features_inactive_ratio(binarized)
+    results["bin_mean_feature_class_specificity"] = mean_feature_class_specificity(binarized, y_val_model)
+    results["bin_mean_within_class_jaccard"] = mean_within_class_jaccard(binarized, y_val_model)
+    results["bin_mean_across_class_jaccard"] = mean_across_class_jaccard(binarized, y_val_model)
+    results["bin_class_separation_score"] = class_separation_score(binarized, y_val_model)
+    results["bin_all_features_active_ratio"] = all_features_active_ratio(binarized)
+    results["bin_all_features_inactive_ratio"] = all_features_inactive_ratio(binarized)
 
     # TODO: add more metrics, e.g:
     #   - are there any more cfire metrics from paper we might want to include?

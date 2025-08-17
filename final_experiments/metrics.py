@@ -1,6 +1,10 @@
 import logging
-from typing import TypeAlias, Tuple, Set, Dict, List
+from typing import TypeAlias, Tuple, Set, Dict
+
 import numpy as np
+from sklearn.metrics import pairwise_distances
+
+from cfire.cfire_module import ItemsetNodeCollection
 
 log = logging.getLogger(__name__)
 
@@ -239,3 +243,197 @@ def max_offdiag_iou(iou: list[list[float]]) -> float:
 # Espresso heuristic logic minimizer https://en.wikipedia.org/wiki/Espresso_heuristic_logic_minimizer
     # works with booleans, so we would need to convert the rules to boolean form
     # problem: has a reduce step that might throw away overlapping/competing rules, that we would normally tie-break via accuracy rule.
+
+
+def build_coverage_matrices(frequent_nodes: list[ItemsetNodeCollection]) -> list[np.ndarray]:
+    """
+    coverage_mats[c][i, j] == True <=> sample i is in support of node j of class c.
+    """
+    coverage_mats: list[np.ndarray] = []
+    for col in frequent_nodes:
+        supports = col.class_support
+        if not supports:
+            coverage_mats.append(np.empty((0, 0), dtype=bool))
+            continue
+        sample_universe = {i for s in supports for i in s}
+        n_samples = (max(sample_universe) + 1) if sample_universe else 0
+        assert n_samples > 0, "Class has nodes but no samples"
+        mat = np.zeros((n_samples, len(supports)), dtype=bool)
+        for j, s in enumerate(supports):
+            if s:
+                mat[list(s), j] = True
+        coverage_mats.append(mat)
+    return coverage_mats
+
+
+def mean_coverage_ratio(coverage_mats: list[np.ndarray]) -> float:
+    """
+    Average (over classes with nodes) of the fraction of samples covered by at least 1 node.
+    """
+    ratios = []
+    for cov_mat in coverage_mats:
+        n_samples, n_nodes = cov_mat.shape
+        if n_nodes == 0:
+            continue
+        ratios.append(float(cov_mat.any(axis=1).mean()))
+    return float(np.mean(ratios)) if ratios else 0.0
+
+
+def mean_single_coverage_ratio(coverage_mats: list[np.ndarray]) -> float:
+    """
+    Average (over classes with nodes) of the fraction of samples covered by exactly 1 node.
+    """
+    ratios = []
+    for cov_mat in coverage_mats:
+        n_samples, n_nodes = cov_mat.shape
+        if n_nodes == 0:
+            continue
+        depth_per_sample = cov_mat.sum(axis=1)
+        ratios.append(float((depth_per_sample == 1).mean()))
+    return float(np.mean(ratios)) if ratios else 0.0
+
+
+def mean_nodes_per_sample(coverage_mats: list[np.ndarray]) -> float:
+    """
+    Average (over classes with nodes) of the mean number of covering nodes per sample.
+    """
+    depths = []
+    for cov_mat in coverage_mats:
+        n_samples, n_nodes = cov_mat.shape
+        if n_nodes == 0:
+            continue
+        depths.append(float(cov_mat.sum(axis=1).mean()))
+    return float(np.mean(depths)) if depths else 0.0
+
+
+def mean_duplicate_nodes_ratio(coverage_mats: list[np.ndarray]) -> float:
+    """
+    Average (over classes with nodes) of the fraction of duplicate nodes.
+    """
+    def count_unique_columns(mat: np.ndarray) -> int:
+        seen = {mat[:, j].tobytes() for j in range(mat.shape[1])}
+        return len(seen)
+
+    ratios = []
+    for cov_mat in coverage_mats:
+        n_samples, n_nodes = cov_mat.shape
+        if n_nodes == 0:
+            continue
+        n_unique = count_unique_columns(cov_mat)
+        ratios.append(1.0 - (n_unique / n_nodes))
+    return float(np.mean(ratios)) if ratios else 0.0
+
+# --- Metrics on normalized attributions ---
+
+def normalize_explanations(a: np.ndarray) -> np.ndarray:
+    e = a.astype(float, copy=True)
+    max_abs = np.max(np.abs(e), axis=1, keepdims=True)   # (n_samples, 1)
+    max_abs[max_abs == 0.0] = 1.0                        # avoid div-by-zero
+    e /= max_abs                                         # broadcast divide
+    np.maximum(e, 0.0, out=e)                            # clamp negatives
+    return e
+
+def mean_absolute_attribution(e: np.ndarray) -> float:
+    return float(np.mean(e))
+
+def attribution_variance(e: np.ndarray) -> float:
+    return float(np.var(e))
+
+def sparsity(e: np.ndarray, eps: float = 1e-6) -> float:
+    return float((e <= eps).mean())
+
+def class_separation_in_attribution_space(e: np.ndarray, y: np.ndarray, metric: str = "cosine") -> float:
+    classes = np.unique(y)
+    if classes.size <= 1:
+        return 0.0
+    centroids = [e[y == c].mean(axis=0) for c in classes if np.any(y == c)]
+    if len(centroids) <= 1:
+        return 0.0
+    C = np.stack(centroids, axis=0)
+    D = pairwise_distances(C, metric=("euclidean" if metric == "euclidean" else "cosine"))
+    iu = np.triu_indices(D.shape[0], k=1)
+    return float(D[iu].mean()) if iu[0].size else 0.0
+
+
+# --- Metrics on binarized masks ---
+
+def mean_active_features_per_sample(binarized: np.ndarray) -> float:
+    return float(binarized.sum(axis=1).mean())
+
+def mean_active_features_ratio(binarized: np.ndarray) -> float:
+    return float((binarized.sum(axis=1) / binarized.shape[1]).mean())
+
+def mean_feature_activation_ratio(binarized: np.ndarray) -> float:
+    return float(binarized.mean(axis=0).mean())
+
+def features_inactive_ratio(binarized: np.ndarray) -> float:
+    return float((~binarized.any(axis=0)).mean())
+
+def all_features_active_ratio(binarized: np.ndarray) -> float:
+    return float(np.all(binarized, axis=1).mean())
+
+def all_features_inactive_ratio(binarized: np.ndarray) -> float:
+    return float((~np.any(binarized, axis=1)).mean())
+
+def mean_feature_class_specificity(m: np.ndarray, y: np.ndarray) -> float:
+    """
+    For each feature j: max_c P(m_ij=1 | y_i=c). Then average over features.
+    """
+    if m.ndim != 2 or m.size == 0:
+        return 0.0
+    n, d = m.shape
+    classes, y_idx = np.unique(y, return_inverse=True)
+    k = len(classes)
+    if k == 0:
+        return 0.0
+    class_counts = np.bincount(y_idx, minlength=k).astype(float)  # (k,)
+    class_counts[class_counts == 0.0] = np.nan
+    A = np.zeros((k, d), dtype=np.float64)
+    for c in range(k):
+        A[c] = m[y_idx == c].sum(axis=0)
+    P = A / class_counts[:, None]  # (k, d)
+    per_feature = np.nanmax(P, axis=0)
+    per_feature = np.nan_to_num(per_feature, nan=0.0)
+    return float(per_feature.mean())
+
+def _mean_jaccard_within_class(m: np.ndarray) -> float:
+    if m.shape[0] <= 1 or m.shape[1] == 0:
+        return 0.0
+    # drop all-zero rows (Jaccard undefined if both rows are zero; we exclude such pairs)
+    mask = m.any(axis=1)
+    m = m[mask]
+    if m.shape[0] <= 1:
+        return 0.0
+    Dj = pairwise_distances(m, metric="jaccard")
+    iu = np.triu_indices(Dj.shape[0], k=1)
+    return float((1.0 - Dj[iu]).mean()) if iu[0].size else 0.0
+
+def mean_within_class_jaccard(m: np.ndarray, y: np.ndarray) -> float:
+    vals = []
+    for c in np.unique(y):
+        Mc = m[y == c]
+        if Mc.shape[0] >= 2:
+            vals.append(_mean_jaccard_within_class(Mc))
+    return float(np.mean(vals)) if vals else 0.0
+
+def mean_across_class_jaccard(m: np.ndarray, y: np.ndarray) -> float:
+    classes = np.unique(y)
+    sims_sum, count = 0.0, 0
+    for i, ci in enumerate(classes):
+        Mi = m[y == ci]
+        Mi = Mi[Mi.any(axis=1)]
+        if Mi.size == 0:
+            continue
+        for cj in classes[i+1:]:
+            Mj = m[y == cj]
+            Mj = Mj[Mj.any(axis=1)]
+            if Mj.size == 0:
+                continue
+            Dj = pairwise_distances(Mi, Mj, metric="jaccard")
+            sim = 1.0 - Dj
+            sims_sum += float(sim.sum())
+            count += sim.size
+    return float(sims_sum / count) if count > 0 else 0.0
+
+def class_separation_score(m: np.ndarray, y: np.ndarray) -> float:
+    return float(mean_within_class_jaccard(m, y) - mean_across_class_jaccard(m, y))

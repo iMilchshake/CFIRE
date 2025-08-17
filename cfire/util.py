@@ -287,6 +287,8 @@ def __preprocess_explanations_ext(
     _max[np.argwhere(_max == 0)[:, 0], 0] = 1  # to avoid divide by zero
     e /= _max
 
+    # TODO: we keep negatives for the normalization, good idea?!
+
     # apply value threshold, early return
     if threshold is not None:
         e[e < threshold] = 0. # TODO: should we also clamp here?
