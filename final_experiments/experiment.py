@@ -237,8 +237,8 @@ def run_cfire_task(task: CFIRETask):
         pruned_dnf_candidate.compute_rule_performance(cfire._data, cfire._labels)
         pruned_acc = accuracy_score(pruned_dnf_candidate.predict(cfire._data), cfire._labels)
 
-        # keep this dnf if relative loss in accuracy is smaller than 1%
-        if (original_acc - pruned_acc) / original_acc < 0.01:
+        # keep this dnf if relative loss in accuracy is smaller than 5%
+        if (original_acc - pruned_acc) / original_acc < 0.05:
             best_pruned_dnf = pruned_dnf_candidate
             best_prune_threshold = win_threshold
         else:
