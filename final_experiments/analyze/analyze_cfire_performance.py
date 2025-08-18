@@ -17,7 +17,7 @@ def load_results(root: Path):
         for subdir in root.iterdir():
             if not subdir.is_dir():
                 continue
-            ok_file = subdir / "results.csv"
+            ok_file = subdir / "metrics.csv"
             fail_file = subdir / "failed_runs.csv"
             if ok_file.exists():
                 df_ok[subdir.name] = safe_read_csv(ok_file)
