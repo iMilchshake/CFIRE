@@ -7,7 +7,7 @@ def safe_read_csv(p: Path) -> pd.DataFrame:
     """Fail-fast CSV loader."""
     return pd.read_csv(p)
 
-def load_results(root: Path, ok_name: str = "results.csv") -> dict[str, pd.DataFrame]:
+def load_results(root: Path, name) -> dict[str, pd.DataFrame]:
     """Map dataset-name -> DataFrame (no ALL aggregation)."""
     out: dict[str, pd.DataFrame] = {}
     if not root.exists():
@@ -15,7 +15,7 @@ def load_results(root: Path, ok_name: str = "results.csv") -> dict[str, pd.DataF
     for subdir in root.iterdir():
         if not subdir.is_dir():
             continue
-        f = subdir / ok_name
+        f = subdir / name
         if f.exists():
             out[subdir.name] = safe_read_csv(f)
     return out
@@ -73,23 +73,36 @@ def filter_to_defaults(df: pd.DataFrame, target_param: str) -> pd.DataFrame:
     return df.loc[mask]
 
 
-def analyze_dataset(name: str, df: pd.DataFrame, fix_others_to_default: bool = False) -> None:
+def analyze_dataset(name: str, base_df: pd.DataFrame, fix_others_to_default: bool = False) -> None:
     print(f"\n\n{'='*15} ANALYSIS FOR DATASET: '{name}' {'='*15}")
+
     for param in PARAMS:
+
         if fix_others_to_default:
-            df_filtered = filter_to_defaults(df, param)
-            df_cfire = apply_tie_breaker(df_filtered, ["model_idx", param])
+            df = filter_to_defaults(base_df, param)
+            df_cfire = apply_tie_breaker(df, ["model_idx", param])
         else:
-            df_cfire = apply_tie_breaker(df)
-        table = metric_table_simple(df_cfire, param, METRICS)
-        print(f"\n[param = {param}]")
-        print(table.to_string())
+            df = base_df
+            df_cfire = apply_tie_breaker(base_df)
+
+        df_IG = df[df["expl_method"] == "IG"]  # 1
+        df_lime = df[df["expl_method"] == "lime"]  # 1
+        df_kernelshap = df[df["expl_method"] == "kernelshap"]  # 1
+
+        for expl_method, df_method in [
+            ("IG", df_IG),
+            ("lime", df_lime),
+            ("kernelshap", df_kernelshap),
+            ("merged", df_cfire)
+        ]:
+            print(f"\n ======= [{name}] param={param} | expl={expl_method} ======")
+            print(metric_table_simple(df_method, param, METRICS).to_string())
 
 def analyze_results(root: Path, fix_others_to_default: bool = False) -> None:
-    dataframes = load_results(root)
+    dataframes = load_results(root, name="metrics.csv")
     for dataset, df in dataframes.items():
         analyze_dataset(dataset, df, fix_others_to_default=fix_others_to_default)
-    print(df.columns.tolist())
+    # print(df.columns.tolist())
 
 if __name__ == "__main__":
     results_dir = Path("./experiments/2_grid/results/")
