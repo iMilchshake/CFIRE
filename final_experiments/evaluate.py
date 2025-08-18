@@ -15,7 +15,6 @@ from .metrics import (
     mean_nodes_per_sample,
     mean_duplicate_nodes_ratio,
     normalize_explanations,
-    mean_absolute_attribution,
     attribution_variance,
     sparsity,
     class_separation_in_attribution_space,
@@ -29,6 +28,11 @@ from .metrics import (
     class_separation_score,
     all_features_active_ratio,
     all_features_inactive_ratio,
+    mean_max_attribution,
+    mean_min_attribution,
+    max_max_attribution,
+    min_min_attribution,
+    mean_mean_attribution,
 )
 
 
@@ -87,8 +91,12 @@ def evaluate_cfire(
 
     # metrics on normalized attributions
     E_norm = normalize_explanations(cfire._explanations)
-    results["attr_mean_absolute_attribution"] = mean_absolute_attribution(E_norm)
-    results["attr_attribution_variance"] = attribution_variance(E_norm)
+    results["attr_mean_max"] = mean_max_attribution(E_norm)
+    results["attr_mean_min"] = mean_min_attribution(E_norm)
+    results["attr_max_max"] = max_max_attribution(E_norm)
+    results["attr_min_min"] = min_min_attribution(E_norm)
+    results["attr_mean_mean"] = mean_mean_attribution(E_norm)
+    results["attr_variance"] = attribution_variance(E_norm)
     results["attr_sparsity"] = sparsity(E_norm)
     results["attr_class_separation"] = class_separation_in_attribution_space(E_norm, y_val_model)
 

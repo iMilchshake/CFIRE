@@ -330,11 +330,22 @@ def normalize_explanations(a: np.ndarray) -> np.ndarray:
     max_abs = np.max(np.abs(e), axis=1, keepdims=True)   # (n_samples, 1)
     max_abs[max_abs == 0.0] = 1.0                        # avoid div-by-zero
     e /= max_abs                                         # broadcast divide
-    np.maximum(e, 0.0, out=e)                            # clamp negatives
     return e
 
-def mean_absolute_attribution(e: np.ndarray) -> float:
-    return float(np.mean(e))
+def mean_mean_attribution(e: np.ndarray) -> float:
+    return float(np.mean(np.mean(e, axis=1)))
+
+def mean_max_attribution(e: np.ndarray) -> float:
+    return float(np.mean(np.max(e, axis=1)))
+
+def mean_min_attribution(e: np.ndarray) -> float:
+    return float(np.mean(np.min(e, axis=1)))
+
+def max_max_attribution(e: np.ndarray) -> float:
+    return float(np.max(np.max(e, axis=1)))
+
+def min_min_attribution(e: np.ndarray) -> float:
+    return float(np.min(np.min(e, axis=1)))
 
 def attribution_variance(e: np.ndarray) -> float:
     return float(np.var(e))
