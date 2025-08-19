@@ -32,7 +32,7 @@ from .metrics import (
     mean_min_attribution,
     max_max_attribution,
     min_min_attribution,
-    mean_mean_attribution,
+    mean_mean_attribution, get_rule_size_nonempty,
 )
 
 
@@ -63,8 +63,9 @@ def evaluate_cfire(
             results[f"{prefix}_f1_{avg_type}"] = f1
 
     rules = cfire.dnf.rules
-    results["rule_count"] = len(rules)
-    results["rule_size"] = get_rule_size(rules)
+    results["class_count_with_rules_can_be_empty"] = len(rules) # also counts empty rules, its == the number of classes i think
+    results["rule_count_non_empty"] = get_rule_size_nonempty(rules)
+    results["number_of_rules_across_all_classes"] = get_rule_size(rules)
     results["literal_count"] = get_literal_count(rules)
     results["unique_literal_count"] = get_unique_literal_count(rules)
 

@@ -20,11 +20,15 @@ def get_rule_size(rules: Rules) -> int:
 
 def get_literal_count(rules: Rules)-> int:
     return sum(
-        len(conjunction)
-        for class_rule in rules
-        for clause in class_rule
-        for conjunction in clause
+        1 # because the literal is a tuple, so count it as one
+        for class_rules in rules
+            for clause in class_rules
+                for _literal in clause
     )
+
+def get_rule_size_nonempty(rules: Rules) -> int:
+    return sum(1 for class_rules in rules
+                    for clause in class_rules if clause)
 
 def get_unique_literal_count(rules: Rules) -> int:
     unique_literals: Set[Literal] = set()
