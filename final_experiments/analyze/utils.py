@@ -62,3 +62,12 @@ def filter_other_params_to_default(df: pd.DataFrame, target_param: str) -> pd.Da
             continue
         mask &= df[p].astype(str) == str(DEFAULT_PARAMS[p])
     return df.loc[mask]
+
+
+def filter_all_params_to_default(df: pd.DataFrame) -> pd.DataFrame:
+    """ filter out all rows except where hyperparams are default """
+    mask = pd.Series(True, index=df.index)
+    for p in ALL_PARAMS:
+        mask &= df[p].astype(str) == str(DEFAULT_PARAMS[p])
+    return df.loc[mask]
+

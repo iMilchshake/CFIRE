@@ -1,20 +1,12 @@
 from pathlib import Path
-import pandas as pd
 
 from final_experiments.analyze.utils import (
-    ALL_PARAMS,
-    DEFAULT_PARAMS,
     load_csv_files,
     get_stat_str,
     merge_local_explainers,
+    filter_all_params_to_default,
 )
 
-def filter_all_params_to_default(df: pd.DataFrame) -> pd.DataFrame:
-    """Keep only rows where all hyperparams match DEFAULT_PARAMS."""
-    mask = pd.Series(True, index=df.index)
-    for p in ALL_PARAMS:
-        mask &= df[p].astype(str) == str(DEFAULT_PARAMS[p])
-    return df.loc[mask]
 
 def main(results_dir: Path, fix_all_to_default: bool = False) -> None:
     dataframes = load_csv_files(results_dir, csv_file_name="metrics.csv")
@@ -27,7 +19,6 @@ def main(results_dir: Path, fix_all_to_default: bool = False) -> None:
         if fix_all_to_default:
             df = filter_all_params_to_default(df)
 
-        # CFIRE (merge/tie), Greedy, plus per-method splits
         df_cfire = merge_local_explainers(df)
         df_greedy = df.loc[df.groupby("model_idx")["test_f1_weighted"].idxmax()]
         df_IG = df[df["expl_method"] == "IG"]
@@ -68,7 +59,6 @@ def main(results_dir: Path, fix_all_to_default: bool = False) -> None:
                 for w in warnings:
                     print(w)
 
-        # Final explanation counts
         counts = df_cfire["expl_method"].value_counts().sort_values(ascending=False)
         print("\n# Final Explanation Counts")
         print(f"{'Method':<12}{'Count':>6}")
