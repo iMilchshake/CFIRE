@@ -15,7 +15,7 @@ from final_experiments.analyze.utils import (
 )
 
 # ---- CONFIG ----
-METRICS = ["val_acc", "test_acc", "test_f1_weighted", "val_f1_weighted", "rule_size", "literal_count"]
+METRICS = ["val_acc", "test_acc", "test_f1_weighted", "val_f1_weighted", "rule_size", "literal_count"] #, "max_iou", "mean_iou"]
 JOIN_CSV_KEYS = [
     "model_idx",
     "cfire_config_idx",
