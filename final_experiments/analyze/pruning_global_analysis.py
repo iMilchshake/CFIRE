@@ -15,7 +15,7 @@ from final_experiments.analyze.utils import (
 )
 
 # ---- CONFIG ----
-METRICS = ["test_f1_weighted", "val_f1_weighted", "rule_size", "literal_count"]
+METRICS = ["val_acc", "test_acc", "test_f1_weighted", "val_f1_weighted", "rule_size", "literal_count"]
 JOIN_CSV_KEYS = [
     "model_idx",
     "cfire_config_idx",
@@ -33,6 +33,15 @@ def _format_percent_df_for_display(df: pd.DataFrame) -> pd.DataFrame:
         if is_numeric_dtype(out[col]):
             out[col] = out[col].map(lambda v: "—" if pd.isna(v) else f"{v:.2f}%")
     return out
+
+def _fmt_mean_std_series(mean_s: pd.Series, std_s: pd.Series) -> pd.Series:
+    """Return strings 'xx.xx% ± yy.yy%' per index; NaN → '—'."""
+    out = []
+    for k in mean_s.index:
+        m = mean_s[k]
+        s = std_s[k] if k in std_s.index else np.nan
+        out.append("—" if pd.isna(m) else f"{m:.2f}% ± {s:.2f}%")
+    return pd.Series(out, index=mean_s.index)
 
 def _print_df(df: pd.DataFrame, title: str | None = None) -> None:
     if title:
@@ -134,16 +143,19 @@ def _avg_over(df: pd.DataFrame) -> pd.Series:
     return df[delta_cols].mean(numeric_only=True)
 
 def _collect_A_tables(per_ds_deltas: Dict[str, pd.DataFrame], defaults_only: bool) -> pd.DataFrame:
-    """A1/A2: per-dataset; average over models & explainers."""
+    """A1/A2: per-dataset; average over models & explainers, show mean ± std."""
     rows = {}
     for ds, d in per_ds_deltas.items():
         d_use = _maybe_filter_defaults(d, defaults_only)
-        rows[ds] = _avg_over(d_use)
+        delta_cols = [c for c in d_use.columns if "__safe" in c or "__best" in c]
+        mean_s = d_use[delta_cols].mean(numeric_only=True)
+        std_s  = d_use[delta_cols].std(numeric_only=True)
+        rows[ds] = _fmt_mean_std_series(mean_s, std_s)
     out = pd.DataFrame.from_dict(rows, orient="index")
-    # Order columns
+
     col_order = [f"{m}__safe" for m in METRICS] + [f"{m}__best" for m in METRICS]
     out = out.reindex(columns=col_order)
-    # Build MultiIndex rows (prune, metric) and transpose
+
     tuples = []
     for variant in ["safe", "best"]:
         for m in METRICS:
@@ -153,17 +165,27 @@ def _collect_A_tables(per_ds_deltas: Dict[str, pd.DataFrame], defaults_only: boo
     return out.T
 
 def _collect_B_tables(per_ds_deltas: Dict[str, pd.DataFrame], defaults_only: bool) -> pd.DataFrame:
-    """B1/B2: per explainer; avg over datasets & models."""
+    """B1/B2: per explainer; avg over datasets & models, show mean ± std."""
     frames = []
     for ds, d in per_ds_deltas.items():
         d_use = _maybe_filter_defaults(d, defaults_only)
         frames.append(d_use.assign(__dataset=ds))
     all_d = pd.concat(frames, ignore_index=True)
+
+    delta_cols = [c for c in all_d.columns if "__safe" in c or "__best" in c]
     grp = all_d.groupby("expl_method", dropna=False)
-    rows = grp.apply(lambda g: g[[c for c in g.columns if "__safe" in c or "__best" in c]].mean(numeric_only=True))
+    means = grp[delta_cols].mean(numeric_only=True)
+    stds  = grp[delta_cols].std(numeric_only=True)
+
+    # merge into "mean ± std" strings
+    rows = means.copy()
+    for col in delta_cols:
+        rows[col] = _fmt_mean_std_series(means[col], stds[col])
+
     rows.index.name = "expl_method"
     col_order = [f"{m}__safe" for m in METRICS] + [f"{m}__best" for m in METRICS]
     rows = rows.reindex(columns=col_order)
+
     tuples = []
     for variant in ["safe", "best"]:
         for m in METRICS:
@@ -175,7 +197,6 @@ def _collect_C1_fixed_others(per_ds_deltas: Dict[str, pd.DataFrame]) -> Dict[str
     """
     C1: For each hyperparam hp:
       - FIX all other params to defaults
-      - vary hp across its values
       - average over datasets/models/explainers
     """
     all_d = pd.concat([d.assign(__dataset=ds) for ds, d in per_ds_deltas.items()], ignore_index=True)
@@ -184,17 +205,25 @@ def _collect_C1_fixed_others(per_ds_deltas: Dict[str, pd.DataFrame]) -> Dict[str
         d_hp = filter_other_params_to_default(all_d, hp)  # leaves hp free
         key = d_hp[hp].astype(str)
         grp = d_hp.groupby(key, dropna=False)
-        tbl = grp[[c for c in d_hp.columns if "__safe" in c or "__best" in c]].mean(numeric_only=True)
+
+        delta_cols = [c for c in d_hp.columns if "__safe" in c or "__best" in c]
+        means = grp[delta_cols].mean(numeric_only=True)
+        stds  = grp[delta_cols].std(numeric_only=True)
+
+        tbl = means.copy()
+        for col in delta_cols:
+            tbl[col] = _fmt_mean_std_series(means[col], stds[col])
+
         col_order = [f"{m}__safe" for m in METRICS] + [f"{m}__best" for m in METRICS]
         tbl = tbl.reindex(columns=col_order)
-        # Row MultiIndex (prune, metric) for transposed view later
+
         tuples = []
         for variant in ["safe", "best"]:
             for m in METRICS:
                 tuples.append((variant, m))
         tbl.columns = pd.MultiIndex.from_tuples(tuples, names=["prune", "metric"])
         tbl.index.name = hp
-        out[hp] = tbl.T  # transpose to match your displayed layout
+        out[hp] = tbl.T
     return out
 
 def _collect_C2_avg_others(per_ds_deltas: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
@@ -208,16 +237,25 @@ def _collect_C2_avg_others(per_ds_deltas: Dict[str, pd.DataFrame]) -> Dict[str, 
     for hp in ALL_PARAMS:
         key = all_d[hp].astype(str)
         grp = all_d.groupby(key, dropna=False)
-        tbl = grp[[c for c in all_d.columns if "__safe" in c or "__best" in c]].mean(numeric_only=True)
+
+        delta_cols = [c for c in all_d.columns if "__safe" in c or "__best" in c]
+        means = grp[delta_cols].mean(numeric_only=True)
+        stds  = grp[delta_cols].std(numeric_only=True)
+
+        tbl = means.copy()
+        for col in delta_cols:
+            tbl[col] = _fmt_mean_std_series(means[col], stds[col])
+
         col_order = [f"{m}__safe" for m in METRICS] + [f"{m}__best" for m in METRICS]
         tbl = tbl.reindex(columns=col_order)
+
         tuples = []
         for variant in ["safe", "best"]:
             for m in METRICS:
                 tuples.append((variant, m))
         tbl.columns = pd.MultiIndex.from_tuples(tuples, names=["prune", "metric"])
         tbl.index.name = hp
-        out[hp] = tbl.T  # transpose to match your displayed layout
+        out[hp] = tbl.T
     return out
 
 def main(results_dir: Path) -> None:
