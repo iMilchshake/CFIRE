@@ -21,7 +21,7 @@ N_SEEDS = 1
 # Define all experiment permutations
 PARAMS = {
     "freq_threshold": [0.01], 
-    "max_dt_depth": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+    "max_dt_depth": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
     "bin_config": [ThresholdBinarization(threshold=0.01)]
 }
 
