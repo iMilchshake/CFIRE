@@ -20,12 +20,16 @@ from sklearn.metrics import accuracy_score
 from torch import Tensor
 
 from cfire.cfire_module import CFIRE
+from cfire.nodeselection import dedup_greedy_cover
 from cfire.util import __preprocess_explanations_ext, __preprocess_explanations
+from final_experiments.deduplication import (
+    recalculate_rule_composition,
+)
 from final_experiments.pruning import decide_by_wins, prune_rules
 from final_experiments.pruning_metrics import compute_rule_metrics, loggable_rule_metrics
 from lxg.datasets import RandomSeed
 from lxg.models import DNFClassifier
-from .evaluate import evaluate_cfire
+from .evaluate import evaluate_cfire, get_dnf_rule_metrics
 from .models import load_model, PretrainedModel, get_pretrained_models
 
 
@@ -188,17 +192,17 @@ def run_cfire_task(task: CFIRETask):
     """perform all single threaded cfire steps"""
 
     logging.info(f"    Starting task {task.task_idx}")
-    t0 = time.time()
+    t0_fit = time.time()
 
     with RandomSeed(task.cfire_seed):
         cfire = init_cfire(task)  # initialize cfire inside the process to reduce IPC
     cfire.fit(task.X_val_np, task.y_val_model_pred_np)
 
-    logging.info(f"    Finished fitting task {task.task_idx} in {time.time() - t0:.2f}s")
-    t0 = time.time()
+    logging.info(f"    Finished fitting task {task.task_idx} in {time.time() - t0_fit:.2f}s")
 
     # TODO: test various set covering algorithms (be careful with ILP multi threaded lolz)
 
+    t0_eval = time.time()
     logging.info(f"    Evaluating task {task.task_idx}")
     original_metrics = evaluate_cfire(
         cfire,
@@ -207,13 +211,36 @@ def run_cfire_task(task: CFIRETask):
         task.y_val_model_pred_np,
         task.y_test_model_pred_np,
     )
+
+    # test deduplication
+    t0_dedup = time.time()
+    dnf_dedup, _ = recalculate_rule_composition(cfire, dedup_greedy_cover, update_cfire=False)
+    t_dedup = time.time() - t0_dedup
+    metrics_dedup = get_dnf_rule_metrics(
+        dnf_dedup,
+        task.X_val_np,
+        task.X_test_np,
+        task.y_val_model_pred_np,
+        task.y_test_model_pred_np
+    )
+    metrics_dedup["t_dedup"] = t_dedup
+
+    # prepare pruning
+    t0_default_rule_metrics = time.time()
     original_rule_metrics = compute_rule_metrics(cfire, task.X_val_np)
+    t_default_rule_metrics = time.time() - t0_default_rule_metrics
     original_dnf = cfire.dnf # keep original dnf
     original_acc = accuracy_score(original_dnf.predict(cfire._data), cfire._labels)
 
     # safe win_threshold=0 pruning
+    t0_safe_pruning = time.time()
     decision = decide_by_wins(original_rule_metrics, win_threshold=0)
     pruned_rules = prune_rules(original_dnf.rules, decision.to_remove)
+
+    # we stop measuring here, as we dont need the following for safe pruning, technically
+    t_safe_pruning = time.time() - t0_safe_pruning
+
+    # evaluate safe pruning
     pruned_dnf = DNFClassifier(pruned_rules, "accuracy")
     pruned_dnf.compute_rule_performance(cfire._data, cfire._labels)
     pruned_acc = accuracy_score(pruned_dnf.predict(cfire._data), cfire._labels)
@@ -229,6 +256,7 @@ def run_cfire_task(task: CFIRETask):
     )
 
     # aggressive pruning, raise threshold until performance loss is too high
+    t0_aggressive_pruning = time.time()
     best_pruned_dnf = pruned_dnf # use safe pruning as default, in case the aggressive pruning fails
     best_prune_threshold = 0
     for win_threshold in range(0, 100):
@@ -243,6 +271,7 @@ def run_cfire_task(task: CFIRETask):
             best_prune_threshold = win_threshold
         else:
             break
+    t_aggressive_pruning = time.time() - t0_aggressive_pruning
 
     # evaluate best pruning configuration
     cfire.dnf = best_pruned_dnf
@@ -257,10 +286,16 @@ def run_cfire_task(task: CFIRETask):
 
     cfire.dnf = original_dnf # restore original dnf
 
-    logging.info(f"    Finished evaluating task {task.task_idx} in {time.time() - t0:.2f}s")
+    # add pruning timings to original metrics
+    original_metrics["t_default_rule_metrics"] = t_default_rule_metrics
+    original_metrics["t_safe_pruning"] = t_safe_pruning
+    original_metrics["t_aggressive_pruning"] = t_aggressive_pruning
+
+    logging.info(f"    Finished evaluating task {task.task_idx} in {time.time() - t0_eval:.2f}s")
     result_bundle = {
         "metrics": dict(original_metrics),
         "rule_log": loggable_rule_metrics(original_rule_metrics, win_threshold=None),
+        "metrics_dedup": dict(metrics_dedup),
 
         "metrics_safe_prune": dict(metrics_safe_pruned),
         "rule_log_safe_prune": loggable_rule_metrics(rule_metrics_safe_pruned, win_threshold=0),
@@ -299,7 +334,6 @@ def run_parallel_tasks_with_timeout(tasks, task_fn, timeout, n_workers):
             raise
 
     return results
-
 
 
 def run_experiment(
@@ -387,7 +421,7 @@ def main():
     experiments = [
         CFIREExperiment(
             dataset_name=dataset_name,
-            n_models=50,
+            n_models=5,
             n_seeds=1,
             cfire_configs=[
                 CFIREConfig(
