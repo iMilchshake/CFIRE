@@ -64,9 +64,9 @@ def get_dnf_rule_metrics(
             results[f"{prefix}_recall_{avg_type}"] = recall
             results[f"{prefix}_f1_{avg_type}"] = f1
 
-    results["class_count_with_rules_can_be_empty"] = len(dnf.rules) # also counts empty rules, its == the number of classes i think
-    results["rule_count_non_empty"] = get_rule_size_nonempty(dnf.rules)
-    results["number_of_rules_across_all_classes"] = get_rule_size(dnf.rules)
+    results["n_classes"] = len(dnf.rules)
+    results["rule_size_nonempty"] = get_rule_size_nonempty(dnf.rules)
+    results["rule_size"] = get_rule_size(dnf.rules)
     results["literal_count"] = get_literal_count(dnf.rules)
     results["unique_literal_count"] = get_unique_literal_count(dnf.rules)
 
