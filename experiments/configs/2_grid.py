@@ -21,8 +21,8 @@ N_SEEDS = 1
 # Define all experiment permutations
 PARAMS = {
     "freq_threshold": [0.001, 0.01, 0.1, 0.25], 
-    "max_dt_depth": [14, 7, 3, 2], 
-    "bin_config": [ThresholdBinarization(threshold=0.01), ThresholdBinarization(threshold=0.1), ThresholdBinarization(threshold=0.25),
+    "max_dt_depth": [14, 7, 2], 
+    "bin_config": [ThresholdBinarization(threshold=0.001), ThresholdBinarization(threshold=0.01), ThresholdBinarization(threshold=0.1), ThresholdBinarization(threshold=0.25),
                    TopKBinarization(k=2), TopKBinarization(k=3)],
 }
 
@@ -66,4 +66,4 @@ if __name__ == "__main__":
             n_seeds=N_SEEDS,
             cfire_configs=cfire_configs,
         )
-        run_experiment(experiment, experiments_dir, timeout=1200)
+        run_experiment(experiment, experiments_dir, timeout=2400)
