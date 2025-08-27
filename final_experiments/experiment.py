@@ -301,9 +301,8 @@ def run_parallel_tasks_with_timeout(tasks, task_fn, timeout, n_workers):
     return results
 
 
-
 def run_experiment(
-    experiment: CFIREExperiment, experiments_dir: Path, timeout: int = 120, use_seq=False,
+    experiment: CFIREExperiment, experiments_dir: Path, timeout: int = 120, use_seq=True,
 ):
     """Run one experiment and store results in the provided directory."""
 
@@ -378,9 +377,9 @@ def main():
     dataset_names = [
         # "diggle", # OpenMLError: Dataset with data_id 694 not found. :(
         # "vehicle", # wow, this takes ~3 minutes per cfire, but paper claims 20 sec?
-        "abalone",
+        "spambase",
         # "beans", # broken interface, requires `random_state` as input?
-        "wine",
+        #"wine",
         # "iris", # e.g. here i observer -10% performance? (because we ensure that all classes are predicted? Ah test set is very small xd).
     ]
 
