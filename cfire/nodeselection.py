@@ -88,8 +88,9 @@ def deduplicate_rules(
         grouped_by_support[frozenset(support_set)].append(node)
 
     deduplicated: List[Tuple[Set[int], "ItemsetNode"]] = []
+
     for support_frozenset, nodes in grouped_by_support.items():
-        best_node = max(nodes, key=lambda n: n.complexity_factor)
+        best_node = min(nodes, key=lambda n: (n.dnf.n_rules, n.dnf.n_literals))
         deduplicated.append((set(support_frozenset), best_node))
     return deduplicated
 

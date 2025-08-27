@@ -208,45 +208,78 @@ def plot3_iou_boxplots(data: Dict[str, pd.DataFrame]) -> None:
 
 # ------------------------------------------------------------------------------
 # PLOT 4 — Hyperparameter sweeps (others default), show all local explainers
+#          NOW: relative gains/losses (%) vs each dataset+explainer default
 # ------------------------------------------------------------------------------
-def _hp_lineplot(data: Dict[str, pd.DataFrame], hp: str, fname: str) -> None:
-    recs = []
+def _baseline_defaults_by_explainer(data: Dict[str, pd.DataFrame],
+                                    metric: str = "test_f1_weighted") -> Dict[tuple, float]:
+    """Return {(dataset, explainer): baseline_mean} for default params."""
+    baselines: Dict[tuple, float] = {}
     for ds, d in data.items():
-        views = _views_lock_others(d, hp)
+        d_def = filter_all_params_to_default(d)
+        views = {
+            "merged": merge_local_explainers(d_def),
+            "IG": d_def[d_def["expl_method"] == "IG"],
+            "lime": d_def[d_def["expl_method"] == "lime"],
+            "kernelshap": d_def[d_def["expl_method"] == "kernelshap"],
+        }
         for expl, dd in views.items():
             if dd is None or dd.empty:
                 continue
-            dd = _ensure_numeric(dd, ["test_f1_weighted"])
+            dd = _ensure_numeric(dd, [metric])
+            base = dd[metric].dropna().mean()
+            if pd.notna(base):
+                baselines[(ds, expl)] = float(base)
+    return baselines
+
+def _hp_lineplot_relative(data: Dict[str, pd.DataFrame], hp: str, fname: str) -> None:
+    metric = "test_f1_weighted"
+    baselines = _baseline_defaults_by_explainer(data, metric=metric)
+
+    recs = []
+    for ds, d in data.items():
+        views = _views_lock_others(d, hp)  # vary hp, others default
+        for expl, dd in views.items():
+            if dd is None or dd.empty:
+                continue
+            base = baselines.get((ds, expl), None)
+            if base is None or base == 0:
+                continue
+            dd = _ensure_numeric(dd, [metric])
             for _, row in dd.iterrows():
+                val = row[metric]
+                if pd.isna(val):
+                    continue
+                rel = 100.0 * (val - base) / abs(base)
                 recs.append({
                     "dataset": ds,
                     "explainer": expl,
                     "x": str(row[hp]),
-                    "test_f1_weighted": row["test_f1_weighted"],
+                    "delta_pct": rel,
                 })
     if not recs:
         return
+
     df = pd.DataFrame(recs)
     ordered = _order_for_param(hp, list(pd.unique(df["x"].tolist())))
     g = sns.relplot(
-        data=df, x="x", y="test_f1_weighted", hue="dataset",
+        data=df, x="x", y="delta_pct", hue="dataset",
         row="explainer", kind="line", marker="o",
         estimator="mean", errorbar="sd",
         height=3.2, aspect=2.0, facet_kws=dict(sharex=False)
     )
     for ax in g.axes.flat:
         ax.set_xlabel(hp)
-        ax.set_ylabel("test_f1_weighted")
-        # enforce ordering where possible
+        ax.set_ylabel("Δ% test_f1_weighted vs default")
+        ax.axhline(0.0, ls="--", lw=1, color="0.5")
         ax.set_xticks(range(len(ordered)))
         ax.set_xticklabels(ordered, rotation=20, ha="right")
-    g.fig.suptitle(f"CFIRE: test_f1_weighted vs {hp} (others at default) — all explainers", y=1.02)
+    g.fig.suptitle(f"CFIRE: relative Δ% in test_f1 vs {hp} (others at default) — all explainers", y=1.02)
     _save(g.fig, fname)
 
 def plot4_hparam_sweeps(data: Dict[str, pd.DataFrame]) -> None:
-    _hp_lineplot(data, "freq_threshold", "PLOT4A_testF1_vs_freq_threshold.png")
-    _hp_lineplot(data, "max_dt_depth", "PLOT4B_testF1_vs_max_dt_depth.png")
-    _hp_lineplot(data, "bin_config", "PLOT4C_testF1_vs_bin_config.png")
+    _hp_lineplot_relative(data, "freq_threshold", "PLOT4A_rel_testF1_vs_freq_threshold.png")
+    _hp_lineplot_relative(data, "max_dt_depth", "PLOT4B_rel_testF1_vs_max_dt_depth.png")
+    _hp_lineplot_relative(data, "bin_config", "PLOT4C_rel_testF1_vs_bin_config.png")
 
 # ------------------------------------------------------------------------------
 # PLOT 5 — Feature activity ratios (defaults), show all local explainers
