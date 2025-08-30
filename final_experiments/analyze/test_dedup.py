@@ -92,15 +92,12 @@ def main() -> None:
             continue
 
         df_merged = pd.merge(
-            df_full[JOIN_COLS + metric_cols],
-            df_dedup[JOIN_COLS + metric_cols],
+            df_full[JOIN_COLS + metric_cols + ["t_compose_rules"]],
+            df_dedup[JOIN_COLS + metric_cols + ["t_dedup"]],
             on=JOIN_COLS,
             suffixes=("_full", "_dedup"),
-            how="inner"
+            how="inner",
         )
-        if df_merged.empty:
-            print(f"\n[skip] {dataset}: no matching rows after merge")
-            continue
 
         for m in metric_cols:
             if m == "val_acc":
@@ -160,20 +157,14 @@ def main() -> None:
         else:
             print("no explainers with rule_size/literal_count change")
 
-        t_vals = pd.to_numeric(df_dedup["t_dedup"], errors="raise").dropna()
-        t_comp = pd.to_numeric(df_full["t_compose_rules"], errors="raise").dropna()
-
-        df_time = pd.DataFrame({"dedup": t_vals, "compose": t_comp}).dropna()
-        diffs = df_time["dedup"] - df_time["compose"]
-
-        print(f"t_dedup (s): {t_vals.mean():.2f}±{t_vals.std():.2f} "
-              f"(min={t_vals.min():.2f}, max={t_vals.max():.2f})")
-        print(f"Δ time abs (dedup - compose_rules): "
-              f"{diffs.mean():.2f}±{diffs.std():.2f} "
+        tt = df_merged[["t_dedup", "t_compose_rules"]].apply(pd.to_numeric, errors="coerce").dropna()
+        diffs = tt["t_dedup"] - tt["t_compose_rules"]
+        print(f"t_dedup (s): {tt['t_dedup'].mean():.2f}±{tt['t_dedup'].std():.2f} "
+              f"(min={tt['t_dedup'].min():.2f}, max={tt['t_dedup'].max():.2f})")
+        print(f"Δ time abs (dedup - compose_rules): {diffs.mean():.2f}±{diffs.std():.2f} "
               f"(min={diffs.min():.2f}, max={diffs.max():.2f})")
 
-        all_time_diffs.append(diffs)  # <<< NEW
-
+        all_time_diffs.append(diffs)
         all_rows.append(df_merged)
 
         # === NEW: percent changes (raw), row-wise ===

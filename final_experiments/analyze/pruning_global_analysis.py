@@ -55,6 +55,37 @@ def _print_df(df: pd.DataFrame, title: str | None = None) -> None:
         showindex=False,
     ))
 
+
+def _print_df_abs(df, title=None):
+    if title: print(f"\n{title}")
+    from tabulate import tabulate
+    print(tabulate(df.reset_index(), headers="keys", tablefmt="github", showindex=False))
+
+def _collect_abs_change(datasets: Dict[str, Dict[str, pd.DataFrame]], defaults_only: bool) -> pd.DataFrame:
+    """Absolute change base→safe / base→best (mean ± std)."""
+    rows = {}
+    for ds, trio in datasets.items():
+        df_base = _maybe_filter_defaults(trio["base"], defaults_only)
+        row = {}
+        for variant in ["safe", "best"]:
+            df_var = _maybe_filter_defaults(trio[variant], defaults_only)
+            # align on common rows by index length (assumes matched CSVs)
+            common_cols = [m for m in METRICS if m in df_base.columns and m in df_var.columns]
+            diffs = df_var[common_cols] - df_base[common_cols]
+            mean_s, std_s = diffs.mean(numeric_only=True), diffs.std(numeric_only=True)
+            row.update({(variant, m): v for m, v in _fmt_mean_std_series_abs(mean_s, std_s).items()})
+        rows[ds] = row
+    out = pd.DataFrame.from_dict(rows, orient="index")
+    out.columns = pd.MultiIndex.from_tuples(out.columns, names=["variant", "metric"])
+    out.index.name = "dataset"
+    return out.T
+
+def _fmt_mean_std_series_abs(mean_s, std_s):
+    return pd.Series(
+        ["—" if pd.isna(mean_s[k]) else f"{mean_s[k]:.2f} ± {std_s.get(k, np.nan):.2f}" for k in mean_s.index],
+        index=mean_s.index,
+    )
+
 def _read_three(results_dir: Path) -> Dict[str, Dict[str, pd.DataFrame]]:
     """Return {dataset: {'base': df, 'safe': df, 'best': df}} for datasets with all three files."""
     base = load_csv_files(results_dir, "metrics.csv")
@@ -292,6 +323,11 @@ def main(results_dir: Path) -> None:
 
     _print_df(A1, title="\n[A1] Per-dataset mean relative deltas (defaults only)")
     _print_df(A2, title="\n[A2] Per-dataset mean relative deltas (all params)")
+
+    A1_abschg = _collect_abs_change(datasets, defaults_only=True)
+    A2_abschg = _collect_abs_change(datasets, defaults_only=False)
+    _print_df_abs(A1_abschg, title="\n[A1-abschg] Absolute change base→safe/best (defaults only)")
+    _print_df_abs(A2_abschg, title="\n[A2-abschg] Absolute change base→safe/best (all params)")
 
     _print_df(B1, title="\n[B1] Per-explainer mean relative deltas (defaults only)")
     _print_df(B2, title="\n[B2] Per-explainer mean relative deltas (all params)")
