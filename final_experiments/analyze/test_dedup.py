@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Dict
 import pandas as pd
 from tabulate import tabulate
+import numpy as np
 
 from final_experiments.analyze.utils import (
     load_csv_files,
@@ -10,6 +11,10 @@ from final_experiments.analyze.utils import (
 )
 
 results_dir = Path("./experiments/2_grid/results/")
+
+# NEW: where CSVs will be written
+export_dir = Path("./experiments/2_grid/analysis/dedup/")
+export_dir.mkdir(parents=True, exist_ok=True)
 
 JOIN_COLS = [
     "model_idx", "cfire_config_idx", "cfire_seed", "expl_method",
@@ -37,14 +42,11 @@ def fmt_rel_percent(mean_change: float, mean_full: float) -> str:
         if mean_change < 0:
             return "-inf%"
         return "0.00%"
-    return f"{(mean_change / mean_full) * 100.0:+.2f}%"
+    mean_rounded = round(mean_change, 2)
+    return f"{(mean_rounded / mean_full) * 100.0:+.2f}%"
 
 
 def stat_with_minmax_and_rel(df: pd.DataFrame, metric: str) -> str:
-    """
-    df slice must contain f"{metric}_change" and f"{metric}_full".
-    Output: mean±std [rel%] (min=..., max=...)
-    """
     change_col = f"{metric}_change"
     base_col = f"{metric}_full"
     vals = pd.to_numeric(df.get(change_col, pd.Series(dtype=float)), errors="coerce").dropna()
@@ -64,12 +66,17 @@ def main() -> None:
     metrics: Dict[str, pd.DataFrame] = load_csv_files(results_dir, csv_file_name="metrics.csv")
     metrics_dedup: Dict[str, pd.DataFrame] = load_csv_files(results_dir, csv_file_name="metrics_dedup.csv")
 
+    all_rows = []
+    all_time_diffs = []
+
+    # single collector for raw rows (with boolean 'drop' column, includes locals + Merged)
+    raw_rows = []
+
     for dataset, _ in metrics.items():
         if dataset not in metrics_dedup:
             print(f"\n[skip] {dataset}: not in dedup")
             continue
 
-        # restrict to default hyperparameters
         df_full = filter_all_params_to_default(metrics[dataset])
         df_dedup = filter_all_params_to_default(metrics_dedup[dataset])
 
@@ -119,7 +126,6 @@ def main() -> None:
 
         results: Dict[str, tuple[dict, int, int]] = {}
 
-        # merged
         merged_idx = merge_local_explainers(df_for_merge).index
         df_merged_sel = df_merged.loc[merged_idx]
         kept, dropped, total = split_keep_drop(df_merged_sel)
@@ -131,7 +137,6 @@ def main() -> None:
             }
             results["Merged"] = (stats, dropped, total)
 
-        # locals
         for m in df_merged["expl_method"].unique():
             df_view = df_merged[df_merged["expl_method"] == m]
             kept, dropped, total = split_keep_drop(df_view)
@@ -155,12 +160,133 @@ def main() -> None:
         else:
             print("no explainers with rule_size/literal_count change")
 
-        if "t_dedup" in df_dedup.columns:
-            t_vals = pd.to_numeric(df_dedup["t_dedup"], errors="coerce").dropna()
-            if t_vals.empty:
-                print("t_dedup (s): —")
+        t_vals = pd.to_numeric(df_dedup["t_dedup"], errors="raise").dropna()
+        t_comp = pd.to_numeric(df_full["t_compose_rules"], errors="raise").dropna()
+
+        df_time = pd.DataFrame({"dedup": t_vals, "compose": t_comp}).dropna()
+        diffs = df_time["dedup"] - df_time["compose"]
+
+        print(f"t_dedup (s): {t_vals.mean():.2f}±{t_vals.std():.2f} "
+              f"(min={t_vals.min():.2f}, max={t_vals.max():.2f})")
+        print(f"Δ time abs (dedup - compose_rules): "
+              f"{diffs.mean():.2f}±{diffs.std():.2f} "
+              f"(min={diffs.min():.2f}, max={diffs.max():.2f})")
+
+        all_time_diffs.append(diffs)  # <<< NEW
+
+        all_rows.append(df_merged)
+
+        # === NEW: percent changes (raw), row-wise ===
+        pct_cols = []
+        for base in ["val_f1_weighted", "test_f1_weighted", "rule_size", "literal_count"]:
+            if f"{base}_full" in df_merged.columns and f"{base}_change" in df_merged.columns:
+                col = f"pct_{base}"
+                df_merged[col] = (df_merged[f"{base}_change"] / df_merged[f"{base}_full"]) * 100.0
+                pct_cols.append(col)
+        if pct_cols:
+            df_merged[pct_cols] = df_merged[pct_cols].replace([np.inf, -np.inf], np.nan)
+
+            # locals no-drop
+            df_nodrop = df_merged[["expl_method", *pct_cols]].copy()
+            df_nodrop.insert(0, "dataset", dataset)
+            df_nodrop.insert(1, "drop", False)
+            raw_rows.append(df_nodrop)
+
+            # merged no-drop
+            mask_merged = df_merged.index.isin(merged_idx)
+            df_m_nodrop = df_merged.loc[mask_merged, pct_cols].copy()
+            if not df_m_nodrop.empty:
+                df_m_nodrop.insert(0, "dataset", dataset)
+                df_m_nodrop.insert(1, "drop", False)
+                df_m_nodrop.insert(2, "expl_method", "Merged")
+                raw_rows.append(df_m_nodrop)
+
+            # locals drop
+            rs = df_merged.get("rule_size_change")
+            lc = df_merged.get("literal_count_change")
+            if rs is not None and lc is not None:
+                mask_keep = ~(rs.fillna(0).eq(0) & lc.fillna(0).eq(0))
             else:
-                print(f"t_dedup (s): {t_vals.mean():.2f}±{t_vals.std():.2f} (min={t_vals.min():.2f}, max={t_vals.max():.2f})")
+                mask_keep = pd.Series(True, index=df_merged.index)
+            kept_drop = df_merged.loc[mask_keep]
+            if not kept_drop.empty:
+                df_drop = kept_drop[["expl_method", *pct_cols]].copy()
+                df_drop.insert(0, "dataset", dataset)
+                df_drop.insert(1, "drop", True)
+                raw_rows.append(df_drop)
+
+            # merged drop
+            kept_m_drop = df_merged.loc[mask_merged & mask_keep, pct_cols].copy()
+            if not kept_m_drop.empty:
+                kept_m_drop.insert(0, "dataset", dataset)
+                kept_m_drop.insert(1, "drop", True)
+                kept_m_drop.insert(2, "expl_method", "Merged")
+                raw_rows.append(kept_m_drop)
+
+    # === write exports ===
+    def write_exports(df_list: list[pd.DataFrame]) -> None:
+        target_cols = ["dataset", "drop", "expl_method",
+                       "pct_val_f1_weighted", "pct_test_f1_weighted",
+                       "pct_rule_size", "pct_literal_count"]
+
+        df_all_raw = pd.concat(df_list, axis=0, ignore_index=True) if df_list else pd.DataFrame(columns=target_cols)
+        cols = [c for c in target_cols if c in df_all_raw.columns]
+        df_all_raw = df_all_raw[cols]
+
+        df_all_raw.to_csv(export_dir / "raw_pct.csv", index=False)
+
+        if not df_all_raw.empty:
+            by_dataset = df_all_raw.groupby(["drop", "dataset"], as_index=False).mean(numeric_only=True)
+            by_expl = df_all_raw.groupby(["drop", "expl_method"], as_index=False).mean(numeric_only=True)
+        else:
+            by_dataset = pd.DataFrame(columns=["drop", "dataset"])
+            by_expl = pd.DataFrame(columns=["drop", "expl_method"])
+
+        by_dataset.to_csv(export_dir / "agg_by_dataset.csv", index=False)
+        by_expl.to_csv(export_dir / "agg_by_explainer.csv", index=False)
+
+    write_exports(raw_rows)
+
+    # === final print: aggregate by explainer (with drop flag) ===
+    # === final print: aggregate by explainer (mean±std), split by drop ===
+    df_all_raw = pd.concat(raw_rows, axis=0, ignore_index=True)
+
+    pct_cols = [
+        "pct_val_f1_weighted", "pct_test_f1_weighted",
+        "pct_rule_size", "pct_literal_count"
+    ]
+
+    means = df_all_raw.groupby(["drop", "expl_method"])[pct_cols].mean()
+    stds  = df_all_raw.groupby(["drop", "expl_method"])[pct_cols].std()
+
+    fmt = (means.round(2).astype(str) + "±" + stds.round(2).astype(str)).reset_index()
+    fmt = fmt.sort_values(["drop", "expl_method"])
+
+    counts = (
+        df_all_raw.groupby(["expl_method", "drop"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(columns=[False, True], fill_value=0)
+    )
+    total = counts[False]
+    kept = counts[True]
+    unchanged_ratio = ((total - kept) / total.replace(0, pd.NA)).astype(float).round(3)
+    ratio_df = unchanged_ratio.rename("unchanged_ratio").reset_index()
+
+    fmt = fmt.merge(ratio_df, on="expl_method", how="left").sort_values(
+        ["drop", "expl_method"]
+    )
+
+    print("\n=== Aggregate percent changes by explainer (split by drop) ===")
+    print(tabulate(
+        fmt[["drop", "expl_method", *pct_cols, "unchanged_ratio"]],
+        headers="keys", tablefmt="github", showindex=False
+    ))
+
+    diffs_all = pd.concat(all_time_diffs, axis=0)
+    print(f"\nΔ_t_abs (dedup - compose_rules) global: "
+          f"{diffs_all.mean():.4f}±{diffs_all.std():.4f} "
+          f"(min={diffs_all.min():.4f}, max={diffs_all.max():.4f})")
 
 
 if __name__ == "__main__":
