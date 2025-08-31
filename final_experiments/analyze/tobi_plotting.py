@@ -20,15 +20,15 @@ from final_experiments.analyze.utils import (
 # ------------------------------------------------------------------------------
 # Paths & global config
 # ------------------------------------------------------------------------------
-results_dir = Path("./experiments/2_grid/results/")
-plots_root = Path("./experiments/2_grid/plots/")
+results_dir = Path("./experiments/4_max_dt_depth/results/")
+plots_root = Path("./experiments/4_max_dt_depth/plots/")
 plots_root.mkdir(parents=True, exist_ok=True)
 
 sns.set_theme()  # default seaborn theme
 
 # For ordering on PLOT4
 ORDER_FREQ = [0.001, 0.01, 0.1, 0.25]
-ORDER_DEPTH = [2, 3, 7, 14]
+ORDER_DEPTH = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14]
 ORDER_BIN = [
     "ThresholdBinarization(threshold=0.01)",
     "ThresholdBinarization(threshold=0.1)",
@@ -264,7 +264,9 @@ def _hp_lineplot_relative(data: Dict[str, pd.DataFrame], hp: str, fname: str) ->
     g = sns.relplot(
         data=df, x="x", y="delta_pct", hue="dataset",
         row="explainer", kind="line", marker="o",
-        estimator="mean", errorbar="sd",
+        estimator="mean",
+        # errorbar="sd",
+        errorbar=None,
         height=3.2, aspect=2.0, facet_kws=dict(sharex=False)
     )
     for ax in g.axes.flat:
@@ -424,6 +426,120 @@ def plot8_depth_vs_literal_count(data: Dict[str, pd.DataFrame]) -> None:
     ax.set_ylabel("literal_count")
     _save(fig, "PLOT8_depth_vs_literal_count_strip.png")
 
+
+# THROWAWAY
+def compare_depth_2_vs_7(data: Dict[str, pd.DataFrame]) -> None:
+    metric = "test_f1_weighted"
+    rows = []
+    for ds, d in data.items():
+        dd = filter_other_params_to_default(d, "max_dt_depth")
+        if dd.empty:
+            continue
+        merged = merge_local_explainers(dd)
+        if merged.empty:
+            continue
+        merged = _ensure_numeric(merged, ["max_dt_depth", metric])
+
+        f2 = merged.loc[merged["max_dt_depth"] == 2, metric].dropna().mean()
+        f7 = merged.loc[merged["max_dt_depth"] == 7, metric].dropna().mean()
+        if pd.isna(f2) or pd.isna(f7):
+            continue
+
+        rel = 100.0 * (f2 - f7) / abs(f7)
+        rows.append((ds, f2, f7, rel))
+
+    rows.sort(key=lambda x: x[3], reverse=True)
+
+    print("Dataset       | F1@depth=2 | F1@depth=7 | Δ% (2 vs 7, merged)")
+    print("-" * 62)
+    for ds, f2, f7, rel in rows:
+        print(f"{ds:12s} | {f2:.3f}       | {f7:.3f}       | {rel:+.1f}%")
+
+
+def table_val_vs_test_deviation(data: Dict[str, pd.DataFrame]) -> None:
+    recs = []
+    for ds, d in data.items():
+        merged = _default_views_all(d)["merged"]
+        if merged is None or merged.empty:
+            continue
+        merged = _ensure_numeric(merged, ["val_f1_weighted", "test_f1_weighted"])
+        merged = merged.dropna(subset=["val_f1_weighted", "test_f1_weighted"])
+
+        diffs = (merged["val_f1_weighted"] - merged["test_f1_weighted"]).tolist()
+        if not diffs:
+            continue
+
+        mean_diff = np.mean(diffs)
+        std_diff = np.std(diffs)
+        recs.append((ds, mean_diff, std_diff, len(diffs)))
+
+    # print table
+    print("Dataset      | N models | Mean(val - test) | Std")
+    print("----------------------------------------------------")
+    for ds, mean_d, std_d, n in recs:
+        print(f"{ds:12s} | {n:8d} | {mean_d:+.3f}          | {std_d:.3f}")
+
+def compare_depth2_vs7_with_valtest(data: Dict[str, pd.DataFrame]) -> None:
+    metric = "test_f1_weighted"
+    explainers = ["IG", "lime", "kernelshap", "merged"]
+
+    for expl in explainers:
+        rows = []
+        for ds, d in data.items():
+            # vary only max_dt_depth
+            dd = filter_other_params_to_default(d, "max_dt_depth")
+            if dd.empty:
+                continue
+
+            # pick explainer view
+            if expl == "merged":
+                dd = merge_local_explainers(dd)
+            else:
+                dd = dd[dd["expl_method"] == expl]
+
+            if dd.empty:
+                continue
+
+            dd = _ensure_numeric(
+                dd, ["max_dt_depth", metric, "val_f1_weighted"]
+            )
+            dd = dd.dropna(subset=[metric, "val_f1_weighted", "max_dt_depth"])
+
+            f2 = dd.loc[dd["max_dt_depth"] == 2, metric].mean()
+            f7 = dd.loc[dd["max_dt_depth"] == 7, metric].mean()
+            if pd.isna(f2) or pd.isna(f7):
+                continue
+
+            delta = 100.0 * (f2 - f7) / abs(f7)
+
+            # val-test deviation (defaults only!)
+            d_def = filter_all_params_to_default(d)
+            if expl == "merged":
+                d_def = merge_local_explainers(d_def)
+            else:
+                d_def = d_def[d_def["expl_method"] == expl]
+
+            if d_def.empty:
+                continue
+            d_def = _ensure_numeric(d_def, ["val_f1_weighted", metric])
+            d_def = d_def.dropna(subset=["val_f1_weighted", metric])
+
+            diffs = (d_def["val_f1_weighted"] - d_def[metric]).tolist()
+            mean_diff = np.mean(diffs) if diffs else np.nan
+
+            rows.append((ds, delta, mean_diff))
+
+        # sort by Δ%
+        rows.sort(key=lambda x: x[1], reverse=True)
+
+        # print table
+        print(f"\n=== Explainer: {expl} ===")
+        print("Dataset      | Δ% (2 vs 7) | Mean(val - test)")
+        print("------------------------------------------------")
+        for ds, delta, mean_diff in rows:
+            print(f"{ds:12s} | {delta:+.1f}%       | {mean_diff:+.3f}")
+
+
 # ------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------
@@ -432,6 +548,12 @@ def main() -> None:
     if not data:
         print("[WARN] No data found under results dir.")
         return
+
+    print("[INFO] Comparing max_dt_depth=2 vs 7")
+    # compare_depth_2_vs_7(data)
+    # table_val_vs_test_deviation(data)
+    compare_depth2_vs7_with_valtest(data)
+    exit(0)
 
     print("[INFO] Generating PLOT1")
     plot1_val_vs_test_scatter(data)

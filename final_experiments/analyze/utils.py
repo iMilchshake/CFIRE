@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
-from pandas.errors import EmptyDataError
+import seaborn as sns
 
 from final_experiments.experiment import ThresholdBinarization
 
@@ -12,6 +12,13 @@ DEFAULT_PARAMS = {
     "max_dt_depth": 7,
     "bin_config": ThresholdBinarization(threshold=0.01),
 }
+
+def init_theme():
+    sns.set_theme(
+        palette=sns.color_palette("hls", n_colors=13),
+        context="paper",
+        style="whitegrid",
+    )
 
 def load_csv_files(root: Path, csv_file_name: str) -> dict[str, pd.DataFrame]:
     """ load csv file for each dataset """
@@ -70,4 +77,3 @@ def filter_all_params_to_default(df: pd.DataFrame) -> pd.DataFrame:
     for p in ALL_PARAMS:
         mask &= df[p].astype(str) == str(DEFAULT_PARAMS[p])
     return df.loc[mask]
-
