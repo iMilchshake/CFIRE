@@ -43,7 +43,7 @@ class Inputs:
 
 def compute_default_root(script_file: str) -> Path:
     script_dir = Path(script_file).resolve().parent
-    repo_root = script_dir.parent.parent  # ../../
+    repo_root = script_dir.parent.parent.parent  # ../../
     return repo_root / "experiments" / "2_grid" / "results"
 
 def read_inputs(ds_dir: Path) -> Inputs:
@@ -77,21 +77,37 @@ def merge_all(inputs: Inputs, keys: List[str]) -> pd.DataFrame:
     return merged
 
 def build_output(merged: pd.DataFrame, metrics: List[str], keys: List[str]) -> pd.DataFrame:
-    out_cols = list(keys)
-    out = merged[keys].copy()
+    # Start with the join keys as the left-most columns
+    base = merged[keys].copy()
+    frames = [base]          # pieces to concatenate once at the end
+    col_order = list(keys)   # final column order
+
     for m in metrics:
         b, s, bt = f"{m}_before", f"{m}_after_safe", f"{m}_after_best"
-        if b not in merged.columns: b = m
-        if s not in merged.columns: s = m
+        # fallbacks (usually unnecessary, but keep your original semantics)
+        if b not in merged.columns:  b = m
+        if s not in merged.columns:  s = m
         if bt not in merged.columns: bt = m
-        out[b] = merged[b]
-        out[s] = merged[s]
-        out[bt] = merged[bt]
-        # New delta column names (start with 'delta ')
-        out[f"delta {m}_safe"] = merged[s] - merged[b]
-        out[f"delta {m}_best"] = merged[bt] - merged[b]
-        out_cols.extend([b, s, bt, f"delta {m}_safe", f"delta {m}_best"])
-    return out[out_cols]
+
+        # Build a small frame for this metric in the desired order.
+        # Use .to_numpy() to avoid extra copies and keep it fast.
+        df_m = pd.DataFrame({
+            b: merged[b].to_numpy(),
+            s: merged[s].to_numpy(),
+            bt: merged[bt].to_numpy(),
+            f"delta {m}_safe": (merged[s] - merged[b]).to_numpy(),
+            f"delta {m}_best": (merged[bt] - merged[b]).to_numpy(),
+        }, index=merged.index)
+
+        frames.append(df_m)
+        col_order.extend([b, s, bt, f"delta {m}_safe", f"delta {m}_best"])
+
+    # Concatenate once → no fragmentation
+    out = pd.concat(frames, axis=1)
+
+    # Ensure the exact column order and (optionally) defragment the result
+    out = out[col_order].copy()
+    return out
 
 def process_dataset(ds_dir: Path):
     inputs = read_inputs(ds_dir)

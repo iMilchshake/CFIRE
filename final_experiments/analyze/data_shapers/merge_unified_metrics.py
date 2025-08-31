@@ -84,7 +84,7 @@ def compute_default_root() -> Path:
     except NameError:
         # Fallback if __file__ is not defined (rare), use CWD
         script_dir = Path.cwd()
-    repo_root = script_dir.parent.parent  # ../../
+    repo_root = script_dir.parent.parent.parent  # ../../
     default_root = repo_root / "experiments" / "2_grid" / "results"
     return default_root
 
