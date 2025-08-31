@@ -13,7 +13,6 @@ from final_experiments.analyze.utils import (
     load_csv_files,
 )
 
-
 results_dir = Path("./experiments/2_grid/results/")
 out_path = Path("./experiments/2_grid/results_grid2_pruning.txt")
 
@@ -141,7 +140,7 @@ def _analyze_one_dataset(name: str,
                          base_df: pd.DataFrame,
                          best_df: pd.DataFrame,
                          safe_df: pd.DataFrame) -> str:
-    """Builds the text section for a single dataset, matching your grid style."""
+    """Builds the text section for a single dataset"""
     lines: List[str] = []
     lines.append(f"\n\n{'='*15} ANALYSIS FOR DATASET: '{name}' {'='*15}")
 

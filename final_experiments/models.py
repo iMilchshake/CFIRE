@@ -11,7 +11,6 @@ from lxg.datasets import _get_dim_classes
 from lxg.models import make_ff
 from lxg.util import restore_checkpoint, load_meta_data
 
-
 def load_model(model_dims: tuple[int], model_path: Path) -> nn.Module:
     model = make_ff(model_dims, torch.nn.ReLU).to("cpu")
     restore_checkpoint(model_path, model, train=False)
