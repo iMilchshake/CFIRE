@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import re
+from final_experiments.analyze.utils import init_theme
 
 # ---- Defaults / config -------------------------------------------------------
 DEFAULT_FREQ = 0.01
@@ -144,7 +145,6 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
     means["variant_order"] = means["variant"].cat.codes
 
     # Style + stable color mapping
-    sns.set_theme()
     hue_order = sorted(means["dataset"].unique().tolist())
     # Use the *current* seaborn default palette; build a dataset->color map
     palette = sns.color_palette(None, n_colors=len(hue_order))
@@ -219,12 +219,13 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"ALL__{metric}_vs_f1_averaged.png"
+    out_path = out_dir / f"ALL__{metric}_vs_f1_averaged.pdf"
     g.figure.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(g.figure)
     return out_path
 
 def main() -> int:
+    init_theme()
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, default=None, help="Path to results root (default: ../../experiments/2_grid/results)")
     ap.add_argument("--out",  type=Path, default=Path("final_experiments/analyze/plots"), help="Output directory")
