@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import re
+from final_experiments.analyze.utils import init_theme
 
 DEFAULT_FREQ = 0.01
 DEFAULT_DT_DEPTH = 7
@@ -168,7 +169,7 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
     palette = sns.color_palette("deep", n_colors=len(hue_order))
     palette_map = dict(zip(hue_order, palette))
 
-    sns.set_theme()
+
     g = sns.FacetGrid(
         data, col="expl_method", hue="dataset", hue_order=hue_order,
         col_wrap=3, sharex=True, sharey=True, height=4.0, palette=palette
@@ -237,12 +238,13 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"ALL__{metric}_vs_f1.png"
+    out_path = out_dir / f"ALL__{metric}_vs_f1.pdf"
     g.figure.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(g.figure)
     return out_path
 
 def main() -> int:
+    init_theme()
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, default=None, help="Path to results root (default: ../../experiments/2_grid/results)")
     ap.add_argument("--out",  type=Path, default=Path("final_experiments/analyze/plots"), help="Output directory")
