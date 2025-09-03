@@ -18,6 +18,12 @@ def init_theme():
         palette=sns.color_palette("hls", n_colors=13),
         context="paper",
         style="whitegrid",
+        rc={
+            "figure.constrained_layout.use": True,
+            "axes.labelsize": 12,
+            "axes.labelweight": "normal",
+            "legend.fontsize": 8,
+        },
     )
 
 def load_csv_files(root: Path, csv_file_name: str) -> dict[str, pd.DataFrame]:

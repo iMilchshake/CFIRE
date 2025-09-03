@@ -6,7 +6,7 @@ from pathlib import Path
 import matplotlib
 from matplotlib.lines import Line2D
 
-matplotlib.use("Agg")
+# matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -136,7 +136,6 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
     if data.empty:
         raise ValueError(f"No data for metric '{metric}'.")
 
-    # Compute per-dataset means (this is the ONLY thing we plot)
     means = (
         data.groupby(["expl_method", "dataset", "variant"], as_index=False)
         .agg(f1=("f1", "mean"), value_norm=("value_norm", "mean"))
@@ -144,28 +143,31 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
     means["variant"] = pd.Categorical(means["variant"], categories=VARIANT_ORDER, ordered=True)
     means["variant_order"] = means["variant"].cat.codes
 
-    # Style + stable color mapping
     hue_order = sorted(means["dataset"].unique().tolist())
-    # Use the *current* seaborn default palette; build a dataset->color map
     palette = sns.color_palette(None, n_colors=len(hue_order))
     palette_map = dict(zip(hue_order, palette))
 
     g = sns.FacetGrid(
         means, col="expl_method", hue="dataset", hue_order=hue_order,
-        col_wrap=3, sharex=True, sharey=True, height=4.0,
+        col_wrap=3, sharex=True, sharey=True, height=3.0,
         palette=palette_map, legend_out=False
     )
-    # Invisible scatter solely to register hue/legend (so legend shows dataset colors)
+    title_map = {
+        "kernelshap": "KernelSHAP",
+        "ig": "IG",
+        "lime": "LIME",
+    }
+    for ax, name in zip(g.axes.flat, g.col_names):
+        pretty = title_map.get(name.lower(), name)
+        ax.set_title(pretty)
+
     handles = [
-        Line2D([0], [0],
-               marker='o', linestyle='',
+        Line2D([0], [0], marker='o', linestyle='',
                markerfacecolor=palette_map[d], markeredgecolor='none',
                markersize=7, label=d)
         for d in hue_order
     ]
-
-    g.figure.subplots_adjust(right=0.82)
-    leg = g.figure.legend(
+    g.figure.legend(
         handles=handles,
         labels=hue_order,
         title="Dataset",
@@ -174,15 +176,12 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
         frameon=False,
     )
 
-    # Draw per-dataset mean path and per-variant markers, using the SAME color for all three points + line
     for ax, expl in zip(g.axes.flat, g.col_names):
         sub = means[means["expl_method"] == expl]
         for dset, sg in sub.groupby("dataset"):
             sg = sg.sort_values("variant_order")
-            color = palette_map[dset]  # <- fix: consistent color for line & markers
-            # line
+            color = palette_map[dset]
             ax.plot(sg["f1"], sg["value_norm"], color=color, linewidth=2.2, zorder=3)
-            # three markers
             for _, r in sg.iterrows():
                 ax.scatter(
                     r["f1"], r["value_norm"],
@@ -191,9 +190,9 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
                     edgecolor="white", linewidth=0.3,
                 )
 
-    # Axes niceties
-    g.set_ylabels("Normalized (Before = 100)")
-    g.set_xlabels("test_f1_weighted")
+    g.set_ylabels("Rule Size (%)", fontsize=12)
+    g.set_xlabels("Test F1", fontsize=12)
+
     try:
         ncol = g._ncol
     except Exception:
@@ -204,22 +203,9 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
         ax.axhline(100.0, linestyle="--", linewidth=0.8, zorder=0)
         ax.set_ylim(bottom=0)
 
-    # Legend outside (right)
-    #g.add_legend(title="Dataset")
-    g.figure.subplots_adjust(right=0.82)
-    if getattr(g, "_legend", None) is not None:
-        g._legend.set_bbox_to_anchor((1.02, 0.5))
-        g._legend.set_loc("center left")
-        g._legend.set_frame_on(False)
-
-    g.figure.tight_layout()
-    g.figure.suptitle(
-        f"All datasets — {metric} vs test_f1_weighted  [freq={DEFAULT_FREQ}, dt={DEFAULT_DT_DEPTH}, {bin_param_text}]",
-        y=1.03
-    )
-
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"ALL__{metric}_vs_f1_averaged.pdf"
+    plt.tight_layout()
     g.figure.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(g.figure)
     return out_path
