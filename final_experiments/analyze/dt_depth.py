@@ -15,8 +15,20 @@ RESULTS_DIR = Path("./experiments/2_grid/results/")
 CSV_FILE = "metrics.csv"
 
 DEPTH_COL = "max_dt_depth"
-D7, D2 = 7, 14
+D7, D2 = 7, 2
 
+SELECTED_METRICS = [
+    "literal_count",
+    "unique_literal_count",
+    "rule_size",
+    "max_iou",
+    "mean_iou",
+    "missing_pred_test",
+    "missing_pred_val",
+    "val_f1_weighted",
+    "test_f1_weighted",
+]
+SELECTED_METRICS = None
 
 def _rel_change(a: pd.Series, b: pd.Series) -> pd.Series:
     # symmetric % change → stable n even when a==0
@@ -71,11 +83,17 @@ def main():
         _print_cfire_source_counts(groups["CFIRE"][0], f"{D7}")
         _print_cfire_source_counts(groups["CFIRE"][1], f"{D2}")
 
-        # numeric metrics only (exclude hyperparams + depth)
-        metrics = [
-            c for c in df.columns
-            if c not in ALL_PARAMS and c != DEPTH_COL and pd.api.types.is_numeric_dtype(df[c])
-        ]
+        # numeric metrics only (exclude hyperparams + depth) → restrict to selected metrics if provided
+        if SELECTED_METRICS is not None:
+            metrics = [
+                c for c in df.columns
+                if c in SELECTED_METRICS and c not in ALL_PARAMS and c != DEPTH_COL and pd.api.types.is_numeric_dtype(df[c])
+            ]
+        else:
+            metrics = [
+                c for c in df.columns
+                if c not in ALL_PARAMS and c != DEPTH_COL and pd.api.types.is_numeric_dtype(df[c])
+            ]
 
         print(f"\n### DATASET = {dataset} (Δ% {D7}→{D2})")
         header = ["Metric"] + groups_order

@@ -143,6 +143,17 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
     means["variant"] = pd.Categorical(means["variant"], categories=VARIANT_ORDER, ordered=True)
     means["variant_order"] = means["variant"].cat.codes
 
+    tbl = (
+        means
+        .sort_values(["expl_method", "dataset", "variant_order"])
+        .loc[:, ["expl_method", "dataset", "variant", "f1", "value_norm"]]
+        .copy()
+    )
+    tbl["f1"] = tbl["f1"].round(6)
+    tbl["value_norm"] = tbl["value_norm"].round(6)
+    print(f"\n[RAW] Metric: {metric}")
+    print(tbl.to_string(index=False))
+
     hue_order = sorted(means["dataset"].unique().tolist())
     palette = sns.color_palette(None, n_colors=len(hue_order))
     palette_map = dict(zip(hue_order, palette))
@@ -190,8 +201,8 @@ def plot_all_datasets_by_metric(df_long: pd.DataFrame, metric: str, out_dir: Pat
                     edgecolor="white", linewidth=0.3,
                 )
 
-    g.set_ylabels("Rule Size (%)", fontsize=12)
-    g.set_xlabels("Test F1", fontsize=12)
+    g.set_ylabels("Rule Size (%)")
+    g.set_xlabels("Test F1")
 
     try:
         ncol = g._ncol

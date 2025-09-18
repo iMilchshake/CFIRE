@@ -247,7 +247,7 @@ def main() -> int:
     init_theme()
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, default=None, help="Path to results root (default: ../../experiments/2_grid/results)")
-    ap.add_argument("--out",  type=Path, default=Path("final_experiments/analyze/plots"), help="Output directory")
+    ap.add_argument("--out",  type=Path, default=Path("final_experiments/analyze/plots_and_avg"), help="Output directory")
     args = ap.parse_args()
 
     root = args.root or compute_default_root(__file__)
