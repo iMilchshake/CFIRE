@@ -1,3 +1,4 @@
+from collections import defaultdict
 from copy import deepcopy
 
 import numpy as np
@@ -87,7 +88,6 @@ class CFIRE:
         self._compute_times['_calculate_rule_candidates'] = time.time() - _start_time
         return
 
-
     def _compose_rule_model(self):
         _start_time = time.time()
         n_classes = len(np.unique(self._labels))
@@ -109,6 +109,15 @@ class CFIRE:
                 if len(s) > 0:
                     _f.append(f); _s.append(s)
             freq_nodes, supp = _f, _s
+
+            # ensure there are no duplicate support sets
+            set_to_indices = defaultdict(list)
+            for index, support_set in enumerate(supp):
+                set_to_indices[frozenset(support_set)].append(index)
+            duplicate_groups = [indices for indices in set_to_indices.values() if len(indices) > 1]
+            if duplicate_groups:
+                print(f"class={c}, Duplicate groups found={duplicate_groups}")
+
             class_dnf = self._composition_strategy(supp, freq_nodes)
             _DNF.append(class_dnf)
         DNF = self.__merge_single_class_dnfs_multiclass_dnf(_DNF)
@@ -119,9 +128,8 @@ class CFIRE:
         return
 
     def __merge_single_class_dnfs_multiclass_dnf(self, dnfs):
-            rules = [dnf.rules[0] for dnf in dnfs]  # 1 or 0?
-            return DNFClassifier(rules, 'accuracy')
-
+        rules = [dnf.rules[0] for dnf in dnfs]  # 1 or 0?
+        return DNFClassifier(rules, 'accuracy')
 
     def fit(self, X=None, Y=None, save_interim=False):
         if self._is_fit:
@@ -149,4 +157,3 @@ class CFIRE:
 
     def eval(self):
         pass
-
