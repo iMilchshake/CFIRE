@@ -2,6 +2,7 @@
 
 import logging
 import os
+import pickle
 import sys
 from concurrent.futures import TimeoutError as FutureTimeout
 from concurrent.futures import as_completed
@@ -292,6 +293,29 @@ def run_cfire_task(task: CFIRETask):
     original_metrics["t_aggressive_pruning"] = t_aggressive_pruning
 
     logging.info(f"    Finished evaluating task {task.task_idx} in {time.time() - t0_eval:.2f}s")
+
+    # Collect DNF rules and predictions for all variants
+    dnf_safe_pruned = DNFClassifier(prune_rules(original_dnf.rules, decide_by_wins(original_rule_metrics, win_threshold=0).to_remove), "accuracy")
+    dnf_safe_pruned.compute_rule_performance(cfire._data, cfire._labels)
+
+    artifacts = {
+        # DNF rules for all variants
+        "dnf_rules_original": original_dnf.rules,
+        "dnf_rules_dedup": dnf_dedup.rules,
+        "dnf_rules_safe_prune": dnf_safe_pruned.rules,
+        "dnf_rules_best_prune": best_pruned_dnf.rules,
+
+        # Data splits (for reconstructing predictions)
+        "X_val": task.X_val_np,
+        "X_test": task.X_test_np,
+        "y_val_model_pred": task.y_val_model_pred_np,
+        "y_test_model_pred": task.y_test_model_pred_np,
+
+        # Pruning metadata
+        "original_rule_metrics": original_rule_metrics,
+        "best_prune_threshold": best_prune_threshold,
+    }
+
     result_bundle = {
         "metrics": dict(original_metrics),
         "rule_log": loggable_rule_metrics(original_rule_metrics, win_threshold=None),
@@ -301,7 +325,9 @@ def run_cfire_task(task: CFIRETask):
         "rule_log_safe_prune": loggable_rule_metrics(rule_metrics_safe_pruned, win_threshold=0),
 
         "metrics_best_prune": dict(metrics_best_pruned),
-        "rule_log_best_prune": loggable_rule_metrics(rule_metrics_best_pruned, win_threshold=best_prune_threshold)
+        "rule_log_best_prune": loggable_rule_metrics(rule_metrics_best_pruned, win_threshold=best_prune_threshold),
+
+        "artifacts": artifacts,
     }
     return result_bundle
 
@@ -368,7 +394,7 @@ def run_experiment(
     results_path = experiments_dir / "results" / experiment.dataset_name
     results_path.mkdir(parents=True, exist_ok=True)
 
-    dictionary_names = {k for bundle in cfire_results if bundle for k in bundle}
+    dictionary_names = {k for bundle in cfire_results if bundle for k in bundle if k != "artifacts"}
     rows = {key: [] for key in dictionary_names}
     failed_rows = []
 
@@ -398,6 +424,30 @@ def run_experiment(
         ", ".join(f"{len(rows[n])} {n}" for n in rows),
         len(failed_rows),
     )
+
+    # Save artifacts (DNF rules, predictions, pruning metadata) as pickles
+    artifacts_path = results_path / "task_results"
+    artifacts_path.mkdir(parents=True, exist_ok=True)
+
+    for task, bundle in zip(tasks, cfire_results):
+        if bundle is None or "artifacts" not in bundle:
+            continue
+
+        task_artifact = {
+            "task_idx": task.task_idx,
+            "model_idx": task.model_idx,
+            "cfire_config_idx": task.cfire_config_idx,
+            "cfire_seed": task.cfire_seed,
+            "expl_method": task.expl_method,
+            "cfire_config": task.cfire_config,
+            **bundle["artifacts"]
+        }
+
+        artifact_file = artifacts_path / f"task_{task.task_idx}.pkl"
+        with open(artifact_file, 'wb') as f:
+            pickle.dump(task_artifact, f)
+
+    logging.info(f"saved {len([b for b in cfire_results if b and 'artifacts' in b])} task artifacts to {artifacts_path}")
 
 
 # TODO: this main() is just for testing -> we need some place to define various different experiments.
