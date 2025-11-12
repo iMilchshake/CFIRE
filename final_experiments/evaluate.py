@@ -90,9 +90,11 @@ def evaluate_cfire(
     dnf_rule_metrics = get_dnf_rule_metrics(cfire.dnf, X_val, X_test, y_val_model, y_test_model)
     results.update(dnf_rule_metrics)
 
-    class_iou_matrix = get_class_iou_matrix_mc(cfire.dnf.rules)
-    results["max_iou"] = max_offdiag_iou(class_iou_matrix)
-    results["mean_iou"] = mean_offdiag_iou(class_iou_matrix)
+    # NOTE: Monte Carlo IoU computation is VERY slow (samples 500k points)
+    # Commented out to speed up experiments. Uncomment if you need IoU metrics.
+    # class_iou_matrix = get_class_iou_matrix_mc(cfire.dnf.rules)
+    # results["max_iou"] = max_offdiag_iou(class_iou_matrix)
+    # results["mean_iou"] = mean_offdiag_iou(class_iou_matrix)
 
     results["t_explanations"] = cfire._compute_times['_calc_explanations']+cfire._compute_times['expl_binarization_fn']
     results["t_rule_candidates"] = cfire._compute_times["_calculate_rule_candidates"]
